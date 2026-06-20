@@ -1,0 +1,14 @@
+# Ignore
+venv/
+__pycache__/
+*.pyc
+.env
+temp/
+cache/
+output/
+models/*.pth
+models/*.pt
+third_party/
+*.egg-info/
+dist/
+build/

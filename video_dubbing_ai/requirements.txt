@@ -1,0 +1,46 @@
+# ============================================
+# Chinese Video To Vietnamese AI Dubbing System
+# Requirements
+# ============================================
+
+# --- Core ---
+numpy>=1.24.0
+scipy>=1.10.0
+
+# --- Video/Audio Processing ---
+ffmpeg-python>=0.2.0
+moviepy>=1.0.3
+opencv-python>=4.8.0
+soundfile>=0.12.0
+librosa>=0.10.0
+pydub>=0.25.1
+torchaudio>=2.1.0
+
+# --- Speaker Diarization ---
+pyannote.audio>=3.1.0
+
+# --- Chinese ASR (SenseVoice) ---
+funasr>=1.0.0
+modelscope>=1.10.0
+
+# --- Translation APIs ---
+google-generativeai>=0.3.0
+openai>=1.0.0
+
+# --- Voice Cloning (OpenVoice V2) ---
+# Installed from git in setup_env.bat
+
+# --- Lip Sync (Wav2Lip) ---
+# Installed from git in setup_env.bat
+
+# --- Web Server (FastAPI) ---
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+websockets>=12.0
+
+# --- Utilities ---
+tqdm>=4.65.0
+python-dotenv>=1.0.0
+colorama>=0.4.6
+requests>=2.31.0

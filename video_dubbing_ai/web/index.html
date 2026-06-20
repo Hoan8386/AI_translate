@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Chinese Video To Vietnamese AI Dubbing System - Hệ thống AI lồng tiếng tự động">
+    <title>AI Dubbing System - Chinese → Vietnamese</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <!-- Background Effects -->
+    <div class="bg-effects">
+        <div class="bg-orb bg-orb-1"></div>
+        <div class="bg-orb bg-orb-2"></div>
+        <div class="bg-orb bg-orb-3"></div>
+        <div class="bg-grid"></div>
+    </div>
+
+    <!-- Header -->
+    <header class="header" id="header">
+        <div class="header-inner">
+            <div class="logo">
+                <div class="logo-icon">
+                    <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                        <rect width="32" height="32" rx="8" fill="url(#logo-grad)"/>
+                        <path d="M8 12L16 8L24 12V20L16 24L8 20V12Z" stroke="white" stroke-width="1.5" fill="none"/>
+                        <circle cx="16" cy="16" r="3" fill="white" opacity="0.9"/>
+                        <defs>
+                            <linearGradient id="logo-grad" x1="0" y1="0" x2="32" y2="32">
+                                <stop stop-color="#6366f1"/>
+                                <stop offset="1" stop-color="#8b5cf6"/>
+                            </linearGradient>
+                        </defs>
+                    </svg>
+                </div>
+                <span class="logo-text">AI Dubbing</span>
+                <span class="logo-badge">V3</span>
+            </div>
+            <nav class="nav">
+                <a href="#hero" class="nav-link active">Trang chủ</a>
+                <a href="#upload" class="nav-link">Upload</a>
+                <a href="#monitor" class="nav-link">Monitor</a>
+            </nav>
+            <div class="header-actions">
+                <div class="connection-status" id="connectionStatus">
+                    <span class="conn-dot conn-disconnected"></span>
+                    <span class="conn-text">Offline</span>
+                </div>
+                <button class="btn-gpu" id="gpuStatus">
+                    <span class="gpu-dot"></span>
+                    <span>GPU Ready</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main">
+        
+        <!-- Hero Section -->
+        <section class="hero" id="hero">
+            <div class="hero-content">
+                <div class="hero-badge">
+                    <span class="badge-dot"></span>
+                    Tối ưu cho RTX 5060 8GB
+                </div>
+                <h1 class="hero-title">
+                    Chinese Video
+                    <span class="gradient-text">→ Vietnamese</span>
+                    <br>AI Dubbing System
+                </h1>
+                <p class="hero-desc">
+                    Hệ thống AI tự động lồng tiếng video tiếng Trung sang tiếng Việt.
+                    Nhận diện nhiều người nói, giữ đặc trưng giọng, đồng bộ khẩu hình.
+                </p>
+                <div class="hero-actions">
+                    <button class="btn btn-primary" onclick="scrollToSection('upload')">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+                        </svg>
+                        Upload Video
+                    </button>
+                    <button class="btn btn-secondary" onclick="scrollToSection('monitor')">
+                        Xem Monitor
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M5 12h14M12 5l7 7-7 7"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="hero-stats">
+                    <div class="stat">
+                        <span class="stat-value">10</span>
+                        <span class="stat-label">Pipeline Stages</span>
+                    </div>
+                    <div class="stat-divider"></div>
+                    <div class="stat">
+                        <span class="stat-value">5</span>
+                        <span class="stat-label">AI Models</span>
+                    </div>
+                    <div class="stat-divider"></div>
+                    <div class="stat">
+                        <span class="stat-value">8GB</span>
+                        <span class="stat-label">VRAM Optimized</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Features -->
+        <section class="features-section">
+            <div class="features-grid">
+                <div class="feature-card" data-delay="0">
+                    <div class="feature-icon feature-icon-1">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2"/>
+                            <circle cx="9" cy="7" r="4"/>
+                            <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>
+                        </svg>
+                    </div>
+                    <h3>Multi-Speaker</h3>
+                    <p>Tự nhận diện và phân biệt nhiều người nói trong video</p>
+                </div>
+                <div class="feature-card" data-delay="100">
+                    <div class="feature-icon feature-icon-2">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/>
+                            <path d="M19 10v2a7 7 0 01-14 0v-2M12 19v4M8 23h8"/>
+                        </svg>
+                    </div>
+                    <h3>Voice Cloning</h3>
+                    <p>Giữ nguyên đặc trưng giọng của từng người khi chuyển sang tiếng Việt</p>
+                </div>
+                <div class="feature-card" data-delay="200">
+                    <div class="feature-icon feature-icon-3">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"/>
+                            <polyline points="12,6 12,12 16,14"/>
+                        </svg>
+                    </div>
+                    <h3>Duration Sync</h3>
+                    <p>Đồng bộ thời lượng audio sinh ra với audio gốc</p>
+                </div>
+                <div class="feature-card" data-delay="300">
+                    <div class="feature-icon feature-icon-4">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M5.5 16.5L3 19l2.5 2.5M18.5 16.5L21 19l-2.5 2.5"/>
+                            <circle cx="12" cy="11" r="6"/>
+                            <path d="M12 8v3l2 1"/>
+                        </svg>
+                    </div>
+                    <h3>Lip Sync</h3>
+                    <p>Đồng bộ khẩu hình video với audio mới bằng Wav2Lip</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Upload Section -->
+        <section class="upload-section" id="upload">
+            <div class="section-header">
+                <span class="section-badge">DUBBING</span>
+                <h2 class="section-title">Upload Video</h2>
+                <p class="section-desc">Kéo thả hoặc chọn video tiếng Trung để bắt đầu</p>
+            </div>
+
+            <div class="upload-area" id="uploadArea">
+                <div class="upload-icon">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                        <polyline points="17,8 12,3 7,8"/>
+                        <line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
+                </div>
+                <h3>Kéo thả video vào đây</h3>
+                <p>hoặc <span class="upload-browse">chọn file</span></p>
+                <p class="upload-formats">Hỗ trợ: MP4, MKV, AVI, MOV, WebM (tối đa 500MB)</p>
+                <input type="file" id="fileInput" accept="video/*" hidden>
+            </div>
+
+            <!-- Upload Progress -->
+            <div class="upload-progress" id="uploadProgress" style="display: none;">
+                <div class="upload-progress-bar">
+                    <div class="upload-progress-fill" id="uploadProgressFill"></div>
+                </div>
+                <p class="upload-progress-text" id="uploadProgressText">Đang upload...</p>
+            </div>
+
+            <!-- Processing Options -->
+            <div class="options-panel" id="optionsPanel" style="display: none;">
+                <div class="option-row">
+                    <div class="option-info">
+                        <h4>Video đã chọn</h4>
+                        <p id="selectedFileName">-</p>
+                    </div>
+                    <button class="btn btn-sm btn-outline" onclick="clearUpload()">Đổi video</button>
+                </div>
+                <div class="options-grid">
+                    <div class="option-item">
+                        <label for="translationApi">Translation API</label>
+                        <select id="translationApi">
+                            <option value="gemini">Gemini API</option>
+                            <option value="openai">OpenAI GPT</option>
+                        </select>
+                    </div>
+                    <div class="option-item">
+                        <label for="lipSyncToggle">Lip Sync</label>
+                        <div class="toggle-switch">
+                            <input type="checkbox" id="lipSyncToggle" checked>
+                            <label for="lipSyncToggle"></label>
+                        </div>
+                    </div>
+                </div>
+                <button class="btn btn-primary btn-lg" id="startBtn" onclick="startProcessing()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="5,3 19,12 5,21 5,3"/>
+                    </svg>
+                    Bắt đầu Dubbing
+                </button>
+            </div>
+        </section>
+
+        <!-- Monitor Section -->
+        <section class="monitor-section" id="monitor">
+            <div class="section-header">
+                <span class="section-badge" id="monitorBadge">STANDBY</span>
+                <h2 class="section-title">Pipeline Monitor</h2>
+                <p class="section-desc">Theo dõi tiến trình xử lý realtime</p>
+            </div>
+
+            <div class="monitor-grid">
+                <!-- Progress Panel -->
+                <div class="monitor-card monitor-progress">
+                    <h3>Tiến trình</h3>
+                    <div class="progress-ring-container">
+                        <svg class="progress-ring" width="140" height="140" viewBox="0 0 140 140">
+                            <defs>
+                                <linearGradient id="progressGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                                    <stop offset="0%" stop-color="#6366f1"/>
+                                    <stop offset="100%" stop-color="#a78bfa"/>
+                                </linearGradient>
+                            </defs>
+                            <circle class="progress-ring-bg" cx="70" cy="70" r="60" fill="none" stroke-width="8"/>
+                            <circle class="progress-ring-fill" cx="70" cy="70" r="60" fill="none" stroke-width="8"
+                                    stroke-dasharray="377" stroke-dashoffset="377" id="progressRing"/>
+                        </svg>
+                        <div class="progress-text">
+                            <span class="progress-value" id="progressValue">0</span>
+                            <span class="progress-unit">%</span>
+                        </div>
+                    </div>
+                    <p class="progress-stage" id="progressStage">Chờ upload video...</p>
+                </div>
+
+                <!-- Pipeline Stages Panel -->
+                <div class="monitor-card monitor-stages">
+                    <h3>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="22,12 18,12 15,21 9,3 6,12 2,12"/>
+                        </svg>
+                        Pipeline Stages
+                    </h3>
+                    <div class="stages-list" id="stagesList">
+                        <div class="stage-item" data-stage="1"><span class="stage-num">01</span><span class="stage-label">Video Processor</span><span class="stage-dot"></span></div>
+                        <div class="stage-item" data-stage="2"><span class="stage-num">02</span><span class="stage-label">Audio Extractor</span><span class="stage-dot"></span></div>
+                        <div class="stage-item" data-stage="3"><span class="stage-num">03</span><span class="stage-label">Speaker Detector</span><span class="stage-badge-gpu">GPU</span><span class="stage-dot"></span></div>
+                        <div class="stage-item" data-stage="4"><span class="stage-num">04</span><span class="stage-label">Segment Creator</span><span class="stage-dot"></span></div>
+                        <div class="stage-item" data-stage="5"><span class="stage-num">05</span><span class="stage-label">Chinese ASR</span><span class="stage-badge-gpu">GPU</span><span class="stage-dot"></span></div>
+                        <div class="stage-item" data-stage="6"><span class="stage-num">06</span><span class="stage-label">Translation</span><span class="stage-badge-api">API</span><span class="stage-dot"></span></div>
+                        <div class="stage-item" data-stage="7"><span class="stage-num">07</span><span class="stage-label">Voice Cloning</span><span class="stage-badge-gpu">GPU</span><span class="stage-dot"></span></div>
+                        <div class="stage-item" data-stage="8"><span class="stage-num">08</span><span class="stage-label">Audio Alignment</span><span class="stage-dot"></span></div>
+                        <div class="stage-item" data-stage="9"><span class="stage-num">09</span><span class="stage-label">Lip Sync</span><span class="stage-badge-gpu">GPU</span><span class="stage-dot"></span></div>
+                        <div class="stage-item" data-stage="10"><span class="stage-num">10</span><span class="stage-label">Video Renderer</span><span class="stage-dot"></span></div>
+                    </div>
+                </div>
+
+                <!-- VRAM Panel -->
+                <div class="monitor-card monitor-vram">
+                    <h3>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="2" y="3" width="20" height="14" rx="2"/>
+                            <path d="M8 21h8M12 17v4"/>
+                        </svg>
+                        GPU VRAM
+                    </h3>
+                    <div class="vram-bar">
+                        <div class="vram-fill" id="vramFill" style="width: 0%"></div>
+                    </div>
+                    <div class="vram-info">
+                        <span id="vramUsed">0 MB</span>
+                        <span id="vramTotal">/ 8192 MB</span>
+                    </div>
+                    <p class="vram-model" id="vramModel">Không có model trên GPU</p>
+                </div>
+
+                <!-- Log Panel -->
+                <div class="monitor-card monitor-log">
+                    <h3>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                            <polyline points="14,2 14,8 20,8"/>
+                        </svg>
+                        Logs
+                    </h3>
+                    <div class="log-container" id="logContainer">
+                        <div class="log-entry log-info">
+                            <span class="log-time">--:--:--</span>
+                            <span class="log-msg">Hệ thống sẵn sàng. Upload video để bắt đầu.</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Segment Results -->
+            <div class="segments-panel" id="segmentsPanel" style="display: none;">
+                <h3>📝 Kết quả Segments</h3>
+                <div class="segments-table">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Speaker</th>
+                                <th>Time</th>
+                                <th>Tiếng Trung</th>
+                                <th>Tiếng Việt</th>
+                            </tr>
+                        </thead>
+                        <tbody id="segmentsBody">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Result Panel -->
+            <div class="result-panel" id="resultPanel" style="display: none;">
+                <div class="result-header">
+                    <h3>🎉 Kết quả</h3>
+                </div>
+                <div class="result-content">
+                    <div class="result-info">
+                        <p class="result-filename" id="resultFilename">output_vi.mp4</p>
+                        <p class="result-status">Dubbing hoàn thành thành công!</p>
+                    </div>
+                    <a class="btn btn-primary btn-download" id="downloadBtn" href="#" download>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                            <polyline points="7,10 12,15 17,10"/>
+                            <line x1="12" y1="15" x2="12" y2="3"/>
+                        </svg>
+                        Tải Video Kết Quả
+                    </a>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-inner">
+            <p>Chinese Video To Vietnamese AI Dubbing System &copy; 2026</p>
+            <p class="footer-tech">PyTorch • pyannote • SenseVoice • OpenVoice V2 • Wav2Lip • ffmpeg</p>
+        </div>
+    </footer>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>
