@@ -52,7 +52,7 @@ class GPUManager:
         
         if self._device == "cuda":
             gpu_name = torch.cuda.get_device_name(0)
-            total_vram = torch.cuda.get_device_properties(0).total_mem / (1024**2)
+            total_vram = torch.cuda.get_device_properties(0).total_memory / (1024**2)
             logger.info(f"GPU detected: {gpu_name} ({total_vram:.0f} MB VRAM)")
         else:
             logger.warning("No GPU detected! Running on CPU (rất chậm)")
@@ -73,7 +73,7 @@ class GPUManager:
         return {
             "allocated": torch.cuda.memory_allocated() / (1024**2),
             "reserved": torch.cuda.memory_reserved() / (1024**2),
-            "total": torch.cuda.get_device_properties(0).total_mem / (1024**2),
+            "total": torch.cuda.get_device_properties(0).total_memory / (1024**2),
         }
     
     def log_vram(self, context: str = ""):

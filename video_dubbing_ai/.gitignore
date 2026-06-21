@@ -12,3 +12,4 @@ third_party/
 *.egg-info/
 dist/
 build/
+input/
