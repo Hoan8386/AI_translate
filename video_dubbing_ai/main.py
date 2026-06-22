@@ -215,8 +215,8 @@ def process_video(input_path: str, output_name: str = None, skip_lipsync: bool =
         # ─────────────────────────────────────────
         global_timer.start("Stage 07: Voice Cloning")
         job.update_status(JobStatus.STAGE_7_VOICE, 7)
-        notify(7, "Voice Cloning", 65, "🔧 GPU: Loading OpenVoice V2...",
-               vram_used=3200, vram_model="OpenVoice V2")
+        notify(7, "Voice Cloning", 65, "🔧 Fish Speech: Sinh giọng Việt...",
+               vram_used=0, vram_model="Fish Speech (External)")
         
         voice_svc = VoiceService()
         generated_dir = str(job_dir / "generated")

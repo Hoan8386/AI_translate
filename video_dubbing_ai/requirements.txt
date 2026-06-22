@@ -1,6 +1,6 @@
 # ============================================
 # AI Video Dubbing System - STABLE BUILD
-# Python 3.10 / 3.11 ONLY
+# Python 3.10 ONLY
 # ============================================
 
 # ---------------- Core ----------------
@@ -16,6 +16,8 @@ librosa==0.10.1
 pydub==0.25.1
 
 # ---------------- PyTorch Stack (IMPORTANT) ----------------
+# Cài riêng qua setup_env.bat với CUDA 12.1:
+#   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 torch==2.2.2
 torchvision==0.17.2
 torchaudio==2.2.2
@@ -35,6 +37,13 @@ modelscope==1.10.0
 google-generativeai>=0.3.0
 openai>=1.0.0
 
+# ---------------- Voice Cloning (Fish Speech) ----------------
+# Fish Speech được cài riêng từ source (setup_env.bat):
+#   cd third_party/fish-speech && pip install -e .
+# Thư viện dưới đây dùng cho pipeline gọi HTTP API + fallback TTS:
+requests==2.31.0
+edge-tts>=7.0.0
+
 # ---------------- Web Server ----------------
 fastapi==0.104.0
 uvicorn[standard]==0.24.0
@@ -45,4 +54,3 @@ websockets==12.0
 tqdm==4.65.0
 python-dotenv==1.0.1
 colorama==0.4.6
-requests==2.31.0

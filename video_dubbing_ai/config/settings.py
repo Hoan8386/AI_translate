@@ -93,11 +93,15 @@ class ASRSettings:
 
 @dataclass
 class VoiceCloneSettings:
-    """Cấu hình Voice Cloning (OpenVoice V2)"""
+    """Cấu hình Voice Cloning (Fish Speech)"""
+    # Fish Speech API server URL
+    server_url: str = os.getenv("FISH_SPEECH_URL", "http://127.0.0.1:8080")
+    # Timeout cho mỗi request (giây)
+    request_timeout: int = 120
     # Thời lượng tối thiểu reference audio (giây)
     min_reference_duration: float = 3.0
     # Thời lượng tối đa reference audio (giây)
-    max_reference_duration: float = 15.0
+    max_reference_duration: float = 30.0
     # Target language
     target_language: str = "VI"
 

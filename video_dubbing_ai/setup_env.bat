@@ -50,15 +50,15 @@ REM --- Install requirements ---
 echo [5/7] Cai dat cac thu vien tu requirements.txt...
 pip install -r requirements.txt
 
-REM --- Install OpenVoice V2 from git ---
-echo [6/7] Cai dat OpenVoice V2...
-if exist third_party\OpenVoice (
-    echo   OpenVoice da ton tai, bo qua...
+REM --- Install Fish Speech from git ---
+echo [6/7] Cai dat Fish Speech...
+if exist third_party\fish-speech (
+    echo   Fish Speech da ton tai, bo qua...
 ) else (
     mkdir third_party 2>nul
     cd third_party
-    git clone https://github.com/myshell-ai/OpenVoice.git
-    cd OpenVoice
+    git clone https://github.com/fishaudio/fish-speech.git
+    cd fish-speech
     pip install -e .
     cd %PROJECT_ROOT%
 )
