@@ -1,56 +1,97 @@
 # ============================================
 # AI Video Dubbing System - STABLE BUILD
-# Python 3.10 ONLY
+# Python 3.10.x
 # ============================================
 
-# ---------------- Core ----------------
+# Core
 numpy==1.26.4
 scipy==1.11.4
+pandas
+scikit-learn
+networkx
+matplotlib
+PyYAML
 
-# ---------------- Audio / Video ----------------
+# Audio / Video
 ffmpeg-python==0.2.0
 moviepy==1.0.3
 opencv-python==4.8.1.78
 soundfile==0.12.1
 librosa==0.10.1
 pydub==0.25.1
+audioread
+scikit-video
+srt
+chardet
 
-# ---------------- PyTorch Stack (IMPORTANT) ----------------
-# Cài riêng qua setup_env.bat với CUDA 12.1:
-#   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+# PyTorch
 torch==2.2.2
 torchvision==0.17.2
 torchaudio==2.2.2
 
-# ---------------- Speaker Diarization (pyannote) ----------------
-pyannote.audio==3.1.1
+# HuggingFace
 huggingface_hub==0.20.3
 transformers==4.36.2
 tokenizers==0.15.2
 accelerate==0.25.0
+safetensors>=0.4.0
 
-# ---------------- ASR (Chinese) ----------------
+# Speaker Diarization
+pyannote.audio==3.1.1
+einops
+speechbrain==0.5.16
+pytorch-metric-learning
+onnxruntime
+samplerate
+# FunASR
 funasr==1.3.11
 modelscope==1.10.0
+sentencepiece
+tensorboardX
+kaldiio
+omegaconf
+hydra-core
+torch-complex
+editdistance
 
-# ---------------- Translation APIs ----------------
+# OpenVoice V2 / MeloTTS
+inflect
+Unidecode
+eng_to_ipa
+cn2an
+pypinyin
+jieba
+num2words
+regex
+g2p-en
+phonemizer
+anyascii
+boto3
+
+# Translation
 google-generativeai>=0.3.0
 openai>=1.0.0
+deep_translator
 
-# ---------------- Voice Cloning (Fish Speech) ----------------
-# Fish Speech được cài riêng từ source (setup_env.bat):
-#   cd third_party/fish-speech && pip install -e .
-# Thư viện dưới đây dùng cho pipeline gọi HTTP API + fallback TTS:
-requests==2.31.0
+# TTS fallback
 edge-tts>=7.0.0
 
-# ---------------- Web Server ----------------
+# Web
 fastapi==0.104.0
 uvicorn[standard]==0.24.0
 python-multipart==0.0.6
 websockets==12.0
 
-# ---------------- Utilities ----------------
+# Utilities
 tqdm==4.65.0
 python-dotenv==1.0.1
 colorama==0.4.6
+requests==2.31.0
+
+# Whisper
+faster-whisper
+ctranslate2
+whisper_timestamped
+av
+more-itertools
+Cython

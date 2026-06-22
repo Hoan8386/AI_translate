@@ -1,20 +1,26 @@
 """
-Stage 7: Voice Cloning
-========================
-Phần QUAN TRỌNG NHẤT - Sinh giọng Việt giữ đặc trưng từng người.
+Stage 7: Voice Cloning (Local Fish Speech)
+============================================
+Sinh giọng Việt giữ đặc trưng từng người.
+Load model Fish Speech trực tiếp (không cần server).
 
-Bước 7.1: Kiểm tra Fish Speech server
-Bước 7.2: Sinh tiếng Việt với giọng clone qua Fish Speech API
+Bước 7.1: Load Fish Speech model (LLAMA + Decoder)
+Bước 7.2: Sinh tiếng Việt với giọng clone
 
 Input:  speaker_1_reference.wav + "Xin chào mọi người"
 Output: speaker_1_vi.wav
 
-Model: Fish Speech (Local HTTP API Server)
+Model: Fish Speech 1.5 (Local Inference)
 """
 
+import gc
 import os
+import sys
 import subprocess
-import requests
+import queue
+import numpy as np
+import soundfile as sf
+import torch
 from pathlib import Path
 from typing import List, Dict, Optional
 
@@ -30,15 +36,15 @@ logger = get_logger(__name__)
 
 class VoiceCloner:
     """
-    Clone giọng nói với Fish Speech (Local API Server).
+    Clone giọng nói với Fish Speech (Local Inference).
     
     Quy trình:
-    1. Kiểm tra Fish Speech server đang chạy (GET /v1/health)
-    2. Đọc reference audio của speaker
-    3. Gửi POST /v1/tts với text + reference audio
-    4. Nhận audio output (WAV) và lưu file
+    1. Load LLAMA model + Decoder model lên GPU
+    2. Đọc reference audio của speaker → encode VQ tokens
+    3. Gọi TTSInferenceEngine.inference() trực tiếp
+    4. Decode audio → lưu WAV
     
-    Fallback: Nếu Fish Speech server không chạy → dùng edge-tts
+    Fallback: Nếu load model thất bại → dùng edge-tts
     """
     
     STAGE_NUM = 7
@@ -47,41 +53,132 @@ class VoiceCloner:
     def __init__(self):
         self.gpu = GPUManager()
         self.settings = get_settings()
-        self._server_url = self.settings.voice_clone.server_url
-        self._timeout = self.settings.voice_clone.request_timeout
-        self._server_available = False
+        self._model_loaded = False
+        self._tts_engine = None
+        self._decoder_model = None
+        self._llama_queue = None
+        
+        # Fish Speech paths
+        self._fish_speech_dir = (
+            self.settings.project_root / "third_party" / "fish-speech"
+        )
     
-    def _check_server(self) -> bool:
+    def _load_model(self) -> bool:
         """
-        Kiểm tra Fish Speech server có đang chạy không.
+        Load Fish Speech models (LLAMA + Decoder) lên GPU.
         
         Returns:
-            True nếu server sẵn sàng, False nếu không
+            True nếu load thành công, False nếu thất bại
         """
+        if self._model_loaded and self._tts_engine is not None:
+            logger.info("✅ Fish Speech model đã được load sẵn")
+            return True
+        
         try:
-            url = f"{self._server_url}/v1/health"
-            response = requests.get(url, timeout=5)
-            if response.status_code == 200:
-                data = response.json()
-                if data.get("status") == "ok":
-                    logger.info(f"✅ Fish Speech server sẵn sàng: {self._server_url}")
-                    return True
-            logger.warning(
-                f"Fish Speech server phản hồi không hợp lệ: "
-                f"status={response.status_code}"
+            # Thêm fish-speech vào sys.path để import được
+            fish_speech_path = str(self._fish_speech_dir)
+            if fish_speech_path not in sys.path:
+                sys.path.insert(0, fish_speech_path)
+            
+            # Import Fish Speech modules
+            from fish_speech.models.text2semantic.inference import (
+                launch_thread_safe_queue,
             )
-            return False
-        except requests.ConnectionError:
-            logger.warning(
-                f"❌ Không thể kết nối Fish Speech server tại {self._server_url}. "
-                f"Hãy chắc chắn server đang chạy:\n"
-                f"  cd third_party/fish-speech\n"
-                f"  python tools/api_server.py --listen 0.0.0.0:8080"
+            from fish_speech.models.dac.inference import (
+                load_model as load_decoder_model,
             )
-            return False
+            from fish_speech.inference_engine import TTSInferenceEngine
+            
+            cfg = self.settings.voice_clone
+            
+            # Resolve checkpoint paths
+            llama_path = self._fish_speech_dir / cfg.llama_checkpoint_path
+            decoder_path = self._fish_speech_dir / cfg.decoder_checkpoint_path
+            
+            # Kiểm tra checkpoints có tồn tại không
+            if not llama_path.exists():
+                logger.error(
+                    f"❌ Không tìm thấy LLAMA checkpoint: {llama_path}\n"
+                    f"  Hãy tải model về:\n"
+                    f"  huggingface-cli download fishaudio/fish-speech-1.5 "
+                    f"--local-dir {self._fish_speech_dir / 'checkpoints/s2-pro'}"
+                )
+                return False
+            
+            if not decoder_path.exists():
+                logger.error(
+                    f"❌ Không tìm thấy Decoder checkpoint: {decoder_path}"
+                )
+                return False
+            
+            # Xác định device và precision
+            device = cfg.device
+            if device == "cuda" and not torch.cuda.is_available():
+                device = "cpu"
+                logger.warning("CUDA không khả dụng, chuyển sang CPU")
+            
+            precision = torch.half if cfg.half else torch.bfloat16
+            
+            logger.info(f"  Loading LLAMA model từ {llama_path}...")
+            self._llama_queue = launch_thread_safe_queue(
+                checkpoint_path=str(llama_path),
+                device=device,
+                precision=precision,
+                compile=False,
+            )
+            logger.info("  ✅ LLAMA model loaded")
+            
+            logger.info(f"  Loading Decoder model từ {decoder_path}...")
+            self._decoder_model = load_decoder_model(
+                config_name=cfg.decoder_config_name,
+                checkpoint_path=str(decoder_path),
+                device=device,
+            )
+            logger.info("  ✅ Decoder model loaded")
+            
+            # Tạo TTS inference engine
+            self._tts_engine = TTSInferenceEngine(
+                llama_queue=self._llama_queue,
+                decoder_model=self._decoder_model,
+                precision=precision,
+                compile=False,
+            )
+            
+            self._model_loaded = True
+            logger.info("✅ Fish Speech model sẵn sàng (local inference)")
+            return True
+            
         except Exception as e:
-            logger.warning(f"Lỗi kiểm tra Fish Speech server: {e}")
+            logger.error(f"❌ Lỗi load Fish Speech model: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            self._model_loaded = False
             return False
+    
+    def _unload_model(self):
+        """Giải phóng VRAM sau khi xong."""
+        try:
+            if self._llama_queue is not None:
+                self._llama_queue.put(None)  # Signal worker thread to stop
+                self._llama_queue = None
+            
+            if self._decoder_model is not None:
+                del self._decoder_model
+                self._decoder_model = None
+            
+            if self._tts_engine is not None:
+                del self._tts_engine
+                self._tts_engine = None
+            
+            self._model_loaded = False
+            
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            gc.collect()
+            
+            logger.info("🗑 Fish Speech model đã được giải phóng khỏi VRAM")
+        except Exception as e:
+            logger.warning(f"Lỗi khi unload model: {e}")
     
     def _generate_with_fish_speech(
         self,
@@ -90,10 +187,7 @@ class VoiceCloner:
         output_path: str,
     ) -> bool:
         """
-        Sinh audio bằng Fish Speech API.
-        
-        Gửi POST /v1/tts với text + reference audio (nếu có).
-        Fish Speech sẽ tự động clone giọng từ reference audio.
+        Sinh audio bằng Fish Speech local inference.
         
         Args:
             text: Nội dung tiếng Việt cần sinh
@@ -103,82 +197,86 @@ class VoiceCloner:
         Returns:
             True nếu thành công, False nếu thất bại
         """
-        url = f"{self._server_url}/v1/tts"
+        if self._tts_engine is None:
+            logger.error("Fish Speech engine chưa được load")
+            return False
         
         try:
-            # Chuẩn bị request body (multipart/form-data)
-            # Fish Speech API nhận JSON body với references
-            payload = {
-                "text": text,
-                "format": "wav",
-                "streaming": False,
-            }
+            # Import schema
+            fish_speech_path = str(self._fish_speech_dir)
+            if fish_speech_path not in sys.path:
+                sys.path.insert(0, fish_speech_path)
             
-            files = {}
+            from fish_speech.utils.schema import (
+                ServeTTSRequest,
+                ServeReferenceAudio,
+            )
             
+            # Chuẩn bị references
+            references = []
             if reference_audio and Path(reference_audio).exists():
-                # Gửi reference audio để voice cloning
-                with open(reference_audio, "rb") as ref_f:
-                    ref_data = ref_f.read()
+                with open(reference_audio, "rb") as f:
+                    audio_bytes = f.read()
                 
-                # Fish Speech API: gửi qua multipart form
-                files = {
-                    "reference_audio": (
-                        Path(reference_audio).name,
-                        ref_data,
-                        "audio/wav",
+                # Reference audio cần kèm text mô tả (có thể để trống)
+                references.append(
+                    ServeReferenceAudio(
+                        audio=audio_bytes,
+                        text="",  # Không cần text mô tả cho reference
                     )
-                }
-                
-                # Gửi request với reference audio
-                response = requests.post(
-                    url,
-                    data=payload,
-                    files=files,
-                    timeout=self._timeout,
-                )
-            else:
-                # Không có reference → TTS thông thường (random voice)
-                response = requests.post(
-                    url,
-                    json=payload,
-                    timeout=self._timeout,
                 )
             
-            if response.status_code == 200:
-                # Lưu audio output
-                output_dir = Path(output_path).parent
-                output_dir.mkdir(parents=True, exist_ok=True)
-                
-                with open(output_path, "wb") as f:
-                    f.write(response.content)
-                
-                # Kiểm tra file hợp lệ
-                file_size = os.path.getsize(output_path)
-                if file_size < 1000:
-                    logger.warning(
-                        f"File output quá nhỏ ({file_size} bytes), "
-                        f"có thể không hợp lệ"
-                    )
+            # Tạo TTS request
+            request = ServeTTSRequest(
+                text=text,
+                references=references,
+                reference_id=None,
+                max_new_tokens=1024,
+                chunk_length=200,
+                top_p=0.7,
+                repetition_penalty=1.2,
+                temperature=0.7,
+                format="wav",
+                streaming=False,
+            )
+            
+            # Chạy inference
+            final_audio = None
+            sample_rate = None
+            
+            for result in self._tts_engine.inference(request):
+                if result.code == "error":
+                    logger.error(f"Fish Speech inference lỗi: {result.error}")
                     return False
-                
-                return True
-            else:
-                error_msg = response.text[:200] if response.text else "Unknown error"
-                logger.error(
-                    f"Fish Speech API lỗi: status={response.status_code}, "
-                    f"error={error_msg}"
+                elif result.code == "final":
+                    if isinstance(result.audio, tuple):
+                        sample_rate, final_audio = result.audio
+            
+            if final_audio is None:
+                logger.error("Không nhận được audio output từ Fish Speech")
+                return False
+            
+            # Lưu audio ra file WAV
+            output_dir = Path(output_path).parent
+            output_dir.mkdir(parents=True, exist_ok=True)
+            
+            sf.write(output_path, final_audio, sample_rate)
+            
+            # Kiểm tra file hợp lệ
+            file_size = os.path.getsize(output_path)
+            if file_size < 1000:
+                logger.warning(
+                    f"File output quá nhỏ ({file_size} bytes), "
+                    f"có thể không hợp lệ"
                 )
                 return False
-                
-        except requests.Timeout:
-            logger.error(
-                f"Fish Speech API timeout ({self._timeout}s) cho text: "
-                f"\"{text[:50]}...\""
-            )
-            return False
+            
+            return True
+            
         except Exception as e:
-            logger.error(f"Lỗi gọi Fish Speech API: {e}")
+            logger.error(f"Lỗi Fish Speech inference: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return False
     
     def _fallback_tts(self, text: str, output_path: str) -> bool:
@@ -254,17 +352,17 @@ class VoiceCloner:
             output_path = Path(output_dir)
             output_path.mkdir(parents=True, exist_ok=True)
             
-            # Bước 7.1: Kiểm tra Fish Speech server
-            logger.info("Bước 7.1: Kiểm tra Fish Speech server...")
-            self._server_available = self._check_server()
+            # Bước 7.1: Load Fish Speech model
+            logger.info("Bước 7.1: Load Fish Speech model (local)...")
+            model_available = self._load_model()
             
-            if not self._server_available:
+            if not model_available:
                 logger.warning(
-                    "⚠ Fish Speech server không khả dụng!\n"
+                    "⚠ Fish Speech model không khả dụng!\n"
                     "  → Sẽ dùng edge-tts làm fallback (không clone giọng)\n"
-                    "  → Để có voice cloning, hãy khởi động Fish Speech server:\n"
-                    "     cd third_party/fish-speech\n"
-                    "     python tools/api_server.py --listen 0.0.0.0:8080"
+                    "  → Để có voice cloning, hãy tải model:\n"
+                    "     huggingface-cli download fishaudio/fish-speech-1.5 "
+                    f"--local-dir {self._fish_speech_dir / 'checkpoints/s2-pro'}"
                 )
             
             # Bước 7.2: Sinh giọng Việt cho từng segment
@@ -303,7 +401,7 @@ class VoiceCloner:
                 success = False
                 
                 # Thử Fish Speech trước
-                if self._server_available:
+                if model_available:
                     success = self._generate_with_fish_speech(
                         text=segment.vi_text,
                         reference_audio=reference_audio,
@@ -339,11 +437,15 @@ class VoiceCloner:
                 if success:
                     segment.generated_audio = generated_path
             
+            # Giải phóng VRAM sau khi xong
+            if model_available:
+                self._unload_model()
+            
             # Thống kê
             total = cloned_count + fallback_count
             logger.info(
                 f"\nVoice cloning hoàn thành:\n"
-                f"  ✓ Fish Speech: {cloned_count} segments\n"
+                f"  ✓ Fish Speech (local): {cloned_count} segments\n"
                 f"  ⚡ Fallback (edge-tts): {fallback_count} segments\n"
                 f"  ✗ Lỗi: {error_count} segments\n"
                 f"  Tổng: {total}/{len(segments)} segments"

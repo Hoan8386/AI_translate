@@ -93,11 +93,14 @@ class ASRSettings:
 
 @dataclass
 class VoiceCloneSettings:
-    """Cấu hình Voice Cloning (Fish Speech)"""
-    # Fish Speech API server URL
-    server_url: str = os.getenv("FISH_SPEECH_URL", "http://127.0.0.1:8080")
-    # Timeout cho mỗi request (giây)
-    request_timeout: int = 120
+    """Cấu hình Voice Cloning (Fish Speech - Local Inference)"""
+    # Checkpoint paths (relative to project_root/third_party/fish-speech/)
+    llama_checkpoint_path: str = "checkpoints/s2-pro"
+    decoder_checkpoint_path: str = "checkpoints/s2-pro/codec.pth"
+    decoder_config_name: str = "modded_dac_vq"
+    # Device & precision
+    device: str = "cuda"
+    half: bool = False  # False = bfloat16, True = float16
     # Thời lượng tối thiểu reference audio (giây)
     min_reference_duration: float = 3.0
     # Thời lượng tối đa reference audio (giây)

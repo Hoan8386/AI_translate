@@ -325,3 +325,6 @@ class Segment:
 ## 📜 Giấy phép bản quyền (License)
 
 Dự án này tuân theo giấy phép mã nguồn mở **MIT License**. Vui lòng tham khảo tệp `LICENSE` để biết thêm chi tiết.
+
+
+pip install deep-translator
