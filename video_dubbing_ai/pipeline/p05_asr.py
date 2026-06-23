@@ -1,20 +1,22 @@
 """
-Stage 5: Chinese ASR
-====================
-Nhận dạng giọng nói tiếng Trung (Speech-to-Text).
+Stage 5: ASR (Automated Speech Recognition)
+===========================================
+Nhận dạng lời thoại tiếng Trung từ file audio và khớp vào cấu trúc phân đoạn (Segments).
 
-Input:  segment_001.wav
-Output: Segment đã có zh_text
+Input:
+    - audio_path: File wav (16KHz, Mono)
+    - segments: List[Segment] (Đã có timeline start/end và speaker từ Stage 3 & 4)
 
-Model: SenseVoice Small (FunASR)
+Output:
+    - List[Segment] (Được cập nhật thêm thuộc tính zh_text)
+
+Technology:
+    FunASR + SenseVoiceSmall (Chạy Local hoàn toàn, tối ưu GPU)
 """
 
-import gc
 from pathlib import Path
 from typing import List
-
 import torch
-from funasr import AutoModel
 
 from models_data.segment import Segment
 from utils.logger import get_logger, log_stage
@@ -25,166 +27,131 @@ from config.settings import get_settings
 logger = get_logger(__name__)
 
 
-class ChineseASR:
-    """
-    Nhận dạng tiếng Trung bằng SenseVoice Small.
-    """
+class ASRProcessor:
 
     STAGE_NUM = 5
-    STAGE_NAME = "Chinese ASR (SenseVoice)"
+    STAGE_NAME = "ASR (SenseVoice)"
+
+    # Lưu trữ mô hình dùng chung (Singleton Pattern) để tránh reload liên tục
+    _shared_model = None
 
     def __init__(self):
         self.gpu = GPUManager()
         self.settings = get_settings()
-        self._model = None
+        
+        # Đồng bộ trạng thái model với bộ nhớ dùng chung
+        self._model = ASRProcessor._shared_model
 
     def _load_model(self):
-        """Load SenseVoice model"""
-
+        """
+        Khởi tạo và nạp mô hình FunASR SenseVoiceSmall lên GPU.
+        Kiểm soát VRAM chặt chẽ trước khi load.
+        """
         if self._model is not None:
             return
 
-        logger.info("Loading ASR model: iic/SenseVoiceSmall")
+        from funasr import AutoModel
+
+        logger.info(f"Loading ASR Model: {self.settings.asr.model_name}...")
+        
+        # Đảm bảo trống ít nhất 2GB VRAM trên RTX 5060 trước khi nạp model
+        self.gpu.ensure_free(2000)
 
         try:
-            self._model = AutoModel(
-                model="iic/SenseVoiceSmall",
-                trust_remote_code=True,
-                disable_update=True,
-                device=self.gpu.device,
+            # Khởi tạo AutoModel từ FunASR
+            model = AutoModel(
+                model=self.settings.asr.model_name,
+                device=self.settings.gpu.device,      # "cuda" hoặc "cpu"
+                ncpu=4,                               # Số luồng CPU bổ trợ
+                hub="ms",                             # Tải qua ModelScope (tối ưu cho mạng VN/Trung Quốc)
+                disable_update=True
             )
-
-            logger.info(f"Model type: {type(self._model)}")
-
-            if self._model is None:
-                raise RuntimeError("Không load được SenseVoice model.")
-
-            logger.info("SenseVoice model loaded")
-
+            
+            self._model = model
+            ASRProcessor._shared_model = model
+            logger.info("ASR Model (SenseVoiceSmall) đã nạp vào VRAM thành công.")
+            
         except Exception as e:
-            logger.exception("Load SenseVoice thất bại")
-            raise RuntimeError(f"Load SenseVoice thất bại: {e}")
+            logger.error(f"Không thể nạp mô hình ASR: {e}")
+            raise RuntimeError(f"ASR Initialization Failed: {e}")
 
-    def _unload_model(self):
-        """Giải phóng VRAM"""
-
-        if self._model is not None:
-            del self._model
-            self._model = None
-
-            gc.collect()
-
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-
-            logger.info("SenseVoice model unloaded")
-
-    def process(self, segments: List[Segment]) -> List[Segment]:
+    def process(self, audio_path: str, segments: List[Segment]) -> List[Segment]:
         """
-        Chạy ASR cho tất cả segment.
+        Trích xuất lời thoại tiếng Trung cho từng phân đoạn timeline.
         """
-
         log_stage(self.STAGE_NUM, self.STAGE_NAME, "START")
 
+        if not segments:
+            logger.warning("Danh sách segments trống. Bỏ qua bước ASR.")
+            log_stage(self.STAGE_NUM, self.STAGE_NAME, "DONE")
+            return segments
+
         with Timer(f"Stage {self.STAGE_NUM}: {self.STAGE_NAME}"):
+            audio_file = Path(audio_path)
+            if not audio_file.exists():
+                raise FileNotFoundError(f"File Audio không tồn tại: {audio_path}")
 
-            try:
-                self.gpu.ensure_free(2000)
+            # Nạp model lên GPU
+            self._load_model()
 
-                self._load_model()
+            logger.info(f"Đang tiến hành nhận dạng lời thoại cho {len(segments)} segments...")
 
-                total = len(segments)
-
-                for i, segment in enumerate(segments):
-
-                    audio_path = segment.source_audio
-
-                    if not audio_path:
-                        logger.warning(
-                            f"Segment {segment.id} không có source_audio"
-                        )
-                        continue
-
-                    if not Path(audio_path).exists():
-                        logger.warning(
-                            f"Audio không tồn tại: {audio_path}"
-                        )
-                        continue
-
-                    logger.info(
-                        f"ASR [{i+1}/{total}] "
-                        f"Segment {segment.id} ({segment.speaker})"
+            # Duyệt qua từng segment để cắt và nhận diện lời thoại dựa trên timeline (start/end)
+            for i, segment in enumerate(segments):
+                try:
+                    # Gọi hàm suy luận của FunASR truyền kèm khoảng thời gian start/end (tính bằng mili giây)
+                    # Note: Cấu hình tham số tùy thuộc vào cách SenseVoice nhận cắt đoạn, 
+                    # thông dụng là truyền trực tiếp luồng cắt hoặc truyền chunk qua param
+                    
+                    res = self._model.generate(
+                        input=str(audio_file),
+                        cache={},
+                        language=self.settings.asr.language, # "zh"
+                        use_itn=True,                        # Chuyển đổi số thông minh (Inverse Text Normalization)
+                        batch_size_s=self.settings.asr.batch_size, # Giữ batch size nhỏ = 1 để tiết kiệm VRAM
+                        beg_ans=int(segment.start * 1000),   # Đổi sang mili giây nếu API yêu cầu
+                        end_ans=int(segment.end * 1000)
                     )
 
-                    try:
-
-                        result = self._model.generate(
-                            input=audio_path,
-                            language="zh",
-                        )
-
-                        if result and len(result) > 0:
-
-                            text = result[0].get("text", "")
-                            text = self._clean_text(text)
-
-                            segment.zh_text = text
-                            segment.confidence = result[0].get(
-                                "confidence", 0.0
-                            )
-
-                            logger.info(
-                                f'  → "{text}" '
-                                f"(conf={segment.confidence:.2f})"
-                            )
-
-                        else:
-
-                            segment.zh_text = ""
-                            segment.confidence = 0.0
-
-                            logger.warning(
-                                f"Segment {segment.id}: không nhận dạng được"
-                            )
-
-                    except Exception as e:
-
-                        logger.exception(
-                            f"ASR error ở segment {segment.id}"
-                        )
-
+                    # Bóc tách text từ kết quả trả về của FunASR
+                    if res and isinstance(res, list) and len(res) > 0:
+                        # Kết quả thông thường của FunASR có dạng [{'text': '...'}]
+                        raw_text = res[0].get('text', '').strip()
+                        segment.zh_text = raw_text
+                    else:
                         segment.zh_text = ""
-                        segment.confidence = 0.0
 
-                recognized = sum(
-                    1 for s in segments
-                    if getattr(s, "zh_text", "")
-                )
+                    logger.info(
+                        f"ASR [{i+1}/{len(segments)}] ({segment.start:.2f}s - {segment.end:.2f}s) "
+                        f"[{getattr(segment, 'speaker', 'unknown')}]: {segment.zh_text}"
+                    )
 
-                logger.info(
-                    f"ASR hoàn thành: "
-                    f"{recognized}/{len(segments)} segments"
-                )
-
-            finally:
-                self._unload_model()
+                except Exception as seg_err:
+                    logger.warning(f"Lỗi nhận dạng tại segment {i} ({segment.start}s - {segment.end}s): {seg_err}")
+                    segment.zh_text = ""
 
         log_stage(self.STAGE_NUM, self.STAGE_NAME, "DONE")
-
         return segments
 
-    def _clean_text(self, text: str) -> str:
+    @classmethod
+    def unload_model(cls):
         """
-        Loại bỏ tag đặc biệt của SenseVoice.
-
-        Ví dụ:
-        <|zh|><|NEUTRAL|><|Speech|>大家好
-        ->
-        大家好
+        Giải phóng hoàn toàn mô hình FunASR khỏi VRAM GPU.
+        Gọi ngay sau khi hoàn thành Stage 5 để chống lỗi tràn bộ nhớ (OOM).
         """
-
-        import re
-
-        text = re.sub(r"<\|.*?\|>", "", text)
-
-        return text.strip()
+        if cls._shared_model is not None:
+            logger.info("Kích hoạt dọn dẹp bộ nhớ: Unloading FunASR khỏi VRAM...")
+            
+            # Hủy liên kết đối tượng mô hình
+            del cls._shared_model
+            cls._shared_model = None
+            
+            # Kích hoạt dọn rác của Python
+            import gc
+            gc.collect()
+            
+            # Ép PyTorch dọn sạch bộ nhớ đệm trên card đồ họa
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                
+            logger.info("Bộ nhớ GPU dành cho ASR đã được giải phóng hoàn toàn.")

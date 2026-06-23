@@ -79,7 +79,7 @@ class SpeakerSettings:
     # Số speaker tối đa (None = auto detect)
     max_speakers: Optional[int] = None
     # Thời lượng tối thiểu segment (giây)
-    min_segment_duration: float = 0.5
+    min_segment_duration: float = 0.2
 
 
 @dataclass

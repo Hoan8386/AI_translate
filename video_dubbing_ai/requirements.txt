@@ -95,3 +95,5 @@ whisper_timestamped
 av
 more-itertools
 Cython
+
+optimum
