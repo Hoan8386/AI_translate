@@ -8,9 +8,19 @@
 """
 
 import sys
+import os
 import webbrowser
 import threading
 from pathlib import Path
+
+# Fix encoding cho Windows console
+if sys.platform == 'win32':
+    os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
 
 # Thêm project root vào path
 PROJECT_ROOT = Path(__file__).parent

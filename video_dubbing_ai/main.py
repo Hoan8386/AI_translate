@@ -176,7 +176,7 @@ def process_video(input_path: str, output_name: str = None, skip_lipsync: bool =
                vram_used=1800, vram_model="SenseVoice")
         
         asr_svc = ASRService()
-        segments = asr_svc.transcribe(segments)
+        segments = asr_svc.transcribe(audio_path, segments)
         job.segments = segments
         
         # Gửi kết quả ASR cho frontend

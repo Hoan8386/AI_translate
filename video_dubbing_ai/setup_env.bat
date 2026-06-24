@@ -44,8 +44,7 @@ python -m pip install --upgrade pip
 
 REM --- Install PyTorch with CUDA ---
 echo [4/8] Cai dat PyTorch voi CUDA 12.1 (cho RTX 5060)...
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-
+pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu124
 REM --- Install requirements ---
 echo [5/8] Cai dat cac thu vien tu requirements.txt...
 pip install -r requirements.txt

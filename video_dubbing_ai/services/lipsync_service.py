@@ -4,17 +4,17 @@ Lip Sync Service
 Service layer cho Lip Sync (Stage 9).
 """
 
-from pipeline.p09_lipsync import LipSyncer
+from pipeline.p09_lipsync import LipSyncProcessor
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
 
 
 class LipSyncService:
-    """Service wrapper cho LipSyncer"""
+    """Service wrapper cho LipSyncProcessor"""
     
     def __init__(self):
-        self.syncer = LipSyncer()
+        self.syncer = LipSyncProcessor()
     
     def sync(self, video_path: str, audio_path: str, output_path: str) -> str:
         """

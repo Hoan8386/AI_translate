@@ -2,9 +2,9 @@ from .p01_video_processor import VideoProcessor
 from .p02_audio_extractor import AudioExtractor
 from .p03_speaker_detector import SpeakerDetector
 from .p04_segment_creator import SegmentCreator
-from .p05_asr import ChineseASR
+from .p05_asr import ASRProcessor
 from .p06_translation import Translator
 from .p07_voice_clone import VoiceCloner
 from .p08_audio_alignment import AudioAligner
-from .p09_lipsync import LipSyncer
+from .p09_lipsync import LipSyncProcessor
 from .p10_renderer import VideoRenderer
