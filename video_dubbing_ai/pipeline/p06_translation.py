@@ -15,7 +15,7 @@ import json
 from typing import List
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
-
+from pathlib import Path
 from models_data.segment import Segment
 from utils.logger import get_logger, log_stage
 from utils.timer import Timer
@@ -40,11 +40,25 @@ class Translator:
     def __init__(self):
         self.gpu = GPUManager()
         self.settings = get_settings()
-        
-        # Cấu hình tên model local (Có thể ném vào SpeakerSettings hoặc tạo mới trong Settings)
-        # Khuyên dùng: "Qwen/Qwen2.5-1.5B-Instruct" vì nó rất nhẹ và hiểu tiếng Trung/Việt cực tốt
-        self.model_name = getattr(self.settings.translation, "local_model_name", "Qwen/Qwen2.5-1.5B-Instruct")
-        
+
+        # Thư mục gốc của project
+        project_root = Path(__file__).resolve().parents[1]
+
+        # Đường dẫn tới model local
+        self.model_name = str(project_root / "third_party" / "qwen2.5")
+
+        # Kiểm tra model có tồn tại không
+        if not Path(self.model_name).exists():
+            raise FileNotFoundError(
+                f"Không tìm thấy model tại:\n{self.model_name}"
+            )
+
+        logger.info("=" * 60)
+        logger.info("Local Translation Model")
+        logger.info(f"Model Path : {self.model_name}")
+        logger.info("=" * 60)
+
+        # Singleton
         self.model = Translator._shared_model
         self.tokenizer = Translator._shared_tokenizer
 
@@ -58,11 +72,18 @@ class Translator:
         # Đảm bảo trống bộ nhớ trước khi nạp
         self.gpu.ensure_free(1500)
 
-        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-        
-        # Load với kiểu dữ liệu float16 hoặc bfloat16 để tối ưu kiến trúc RTX 5060
+        logger.info(f"Loading model from: {self.model_name}")
+
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            self.model_name,
+            trust_remote_code=True,
+            local_files_only=True
+        )
+
         self.model = AutoModelForCausalLM.from_pretrained(
             self.model_name,
+            trust_remote_code=True,
+            local_files_only=True,
             torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
             device_map="auto"
         )

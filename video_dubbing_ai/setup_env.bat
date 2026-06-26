@@ -74,6 +74,7 @@ if exist third_party\Wav2Lip (
     cd %PROJECT_ROOT%
 )
 
+@REM đã sử lại tài vào trong thư mục third_party để tránh xung đột với các dự án khác
 REM --- Download Local Translation Model ---
 echo [8/8] Dang tu dong tai Model dich thuat Local (Qwen2.5-1.5B)...
 echo.

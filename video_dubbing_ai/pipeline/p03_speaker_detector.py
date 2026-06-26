@@ -1,11 +1,10 @@
 """
 Stage 3: Speaker Detector
-Optimized for RTX 5060 + Torch 2.8 + pyannote.audio 3.3.1
+Fixed for Torch 2.8 + pyannote.audio 3.3.2 (RTX 5060)
 """
 
 from pathlib import Path
 from typing import List, Dict
-import json
 import gc
 
 import torch
@@ -27,39 +26,49 @@ class SpeakerDetector:
     _shared_pipeline = None
 
     def __init__(self):
-
         self.gpu = GPUManager()
-
         self.settings = get_settings()
-
         self._pipeline = SpeakerDetector._shared_pipeline
 
+    # =========================
+    # LOAD MODEL (FIXED)
+    # =========================
     def _load_model(self):
 
         if self._pipeline is not None:
             return
 
-        # ===== FIX CHO TORCH >=2.6 =====
+        import torch
 
+        # ===== FIX TORCH 2.6+ SAFE LOAD =====
         from torch.torch_version import TorchVersion
+        from pyannote.audio.core.task import Specifications, Problem
 
-        torch.serialization.add_safe_globals(
-            [
-                TorchVersion,
-            ]
-        )
+        torch.serialization.add_safe_globals([
+            TorchVersion,
+            Specifications,
+            Problem,
+        ])
+        # ====================================
 
-        # ==============================
+        # 🔥 CRITICAL PATCH: force weights_only=False
+        original_torch_load = torch.load
 
+        def patched_torch_load(*args, **kwargs):
+            kwargs["weights_only"] = False
+            return original_torch_load(*args, **kwargs)
+
+        torch.load = patched_torch_load
+
+        # Import after patch
         from pyannote.audio import Pipeline
 
         hf_token = self.settings.speaker.hf_token
 
         if not hf_token:
-
             raise ValueError(
                 "HF_TOKEN chưa được cấu hình.\n"
-                "Accept license của pyannote trước."
+                "Hãy accept model license trên HuggingFace."
             )
 
         logger.info(
@@ -71,34 +80,25 @@ class SpeakerDetector:
             use_auth_token=hf_token,
         )
 
-        if pipeline is None:
+        # restore torch.load
+        torch.load = original_torch_load
 
-            raise RuntimeError(
-                "Không thể load pyannote pipeline."
-            )
+        if pipeline is None:
+            raise RuntimeError("Không thể load pyannote pipeline.")
 
         if self.gpu.device == "cuda":
-
-            logger.info(
-                "Moving pyannote model to CUDA..."
-            )
-
-            pipeline.to(
-                torch.device("cuda")
-            )
+            logger.info("Moving model to CUDA...")
+            pipeline.to(torch.device("cuda"))
 
         self._pipeline = pipeline
-
         SpeakerDetector._shared_pipeline = pipeline
 
-        logger.info(
-            "pyannote loaded."
-        )
+        logger.info("pyannote loaded successfully.")
 
-    def process(
-        self,
-        audio_path: str,
-    ) -> List[Dict]:
+    # =========================
+    # PROCESS AUDIO
+    # =========================
+    def process(self, audio_path: str) -> List[Dict]:
 
         log_stage(
             self.STAGE_NUM,
@@ -106,36 +106,23 @@ class SpeakerDetector:
             "START",
         )
 
-        with Timer(
-            f"Stage {self.STAGE_NUM}: {self.STAGE_NAME}"
-        ):
+        with Timer(f"Stage {self.STAGE_NUM}: {self.STAGE_NAME}"):
 
             audio_file = Path(audio_path)
 
             if not audio_file.exists():
+                raise FileNotFoundError(audio_path)
 
-                raise FileNotFoundError(
-                    audio_path
-                )
-
-            self.gpu.ensure_free(
-                2000
-            )
+            self.gpu.ensure_free(2000)
 
             self._load_model()
 
+            # load audio (optional safe)
             try:
-
-                waveform, sample_rate = torchaudio.load(
-                    str(audio_file)
-                )
+                waveform, sample_rate = torchaudio.load(str(audio_file))
 
                 if waveform.shape[0] > 1:
-
-                    waveform = waveform.mean(
-                        dim=0,
-                        keepdim=True,
-                    )
+                    waveform = waveform.mean(dim=0, keepdim=True)
 
                 audio_input = {
                     "waveform": waveform,
@@ -143,68 +130,26 @@ class SpeakerDetector:
                 }
 
             except Exception:
+                audio_input = str(audio_file)
 
-                audio_input = str(
-                    audio_file
-                )
-
+            # diarization params
             params = {}
 
-            if getattr(
-                self.settings.speaker,
-                "min_speakers",
-                None,
-            ):
+            if getattr(self.settings.speaker, "min_speakers", None):
+                params["min_speakers"] = self.settings.speaker.min_speakers
 
-                params[
-                    "min_speakers"
-                ] = (
-                    self.settings
-                    .speaker
-                    .min_speakers
-                )
+            if getattr(self.settings.speaker, "max_speakers", None):
+                params["max_speakers"] = self.settings.speaker.max_speakers
 
-            if getattr(
-                self.settings.speaker,
-                "max_speakers",
-                None,
-            ):
+            if getattr(self.settings.speaker, "num_speakers", None):
+                params["num_speakers"] = self.settings.speaker.num_speakers
 
-                params[
-                    "max_speakers"
-                ] = (
-                    self.settings
-                    .speaker
-                    .max_speakers
-                )
+            logger.info("Running diarization...")
 
-            if getattr(
-                self.settings.speaker,
-                "num_speakers",
-                None,
-            ):
-
-                params[
-                    "num_speakers"
-                ] = (
-                    self.settings
-                    .speaker
-                    .num_speakers
-                )
-
-            logger.info(
-                "Running diarization..."
-            )
-
-            diarization = self._pipeline(
-                audio_input,
-                **params,
-            )
+            diarization = self._pipeline(audio_input, **params)
 
             results = []
-
             speaker_map = {}
-
             counter = 0
 
             min_duration = getattr(
@@ -213,104 +158,62 @@ class SpeakerDetector:
                 0.2,
             )
 
-            for turn, _, speaker in diarization.itertracks(
-                yield_label=True
-            ):
+            for turn, _, speaker in diarization.itertracks(yield_label=True):
 
                 if speaker not in speaker_map:
-
                     counter += 1
+                    speaker_map[speaker] = f"speaker_{counter}"
 
-                    speaker_map[
-                        speaker
-                    ] = (
-                        f"speaker_{counter}"
-                    )
-
-                duration = (
-                    turn.end
-                    - turn.start
-                )
+                duration = turn.end - turn.start
 
                 if duration < min_duration:
-
                     continue
 
-                results.append(
-                    {
-                        "speaker":
-                        speaker_map[speaker],
+                results.append({
+                    "speaker": speaker_map[speaker],
+                    "start": round(turn.start, 3),
+                    "end": round(turn.end, 3),
+                })
 
-                        "start":
-                        round(
-                            turn.start,
-                            3,
-                        ),
+            return self._merge_adjacent(results)
 
-                        "end":
-                        round(
-                            turn.end,
-                            3,
-                        ),
-                    }
-                )
-
-            results = self._merge_adjacent(
-                results
-            )
-
-            return results
-
-    def _merge_adjacent(
-        self,
-        segments,
-        gap_threshold=0.3,
-    ):
+    # =========================
+    # MERGE SEGMENTS
+    # =========================
+    def _merge_adjacent(self, segments, gap_threshold=0.3):
 
         if not segments:
-
             return []
 
-        merged = [
-            segments[0].copy()
-        ]
+        merged = [segments[0].copy()]
 
         for seg in segments[1:]:
 
             last = merged[-1]
 
-            gap = (
-                seg["start"]
-                - last["end"]
-            )
+            gap = seg["start"] - last["end"]
 
             if (
-                seg["speaker"]
-                == last["speaker"]
+                seg["speaker"] == last["speaker"]
                 and gap < gap_threshold
             ):
-
                 last["end"] = seg["end"]
-
             else:
-
-                merged.append(
-                    seg.copy()
-                )
+                merged.append(seg.copy())
 
         return merged
 
+    # =========================
+    # UNLOAD MODEL
+    # =========================
     @classmethod
     def unload_model(cls):
 
         if cls._shared_pipeline:
-
             del cls._shared_pipeline
-
             cls._shared_pipeline = None
 
             gc.collect()
 
             if torch.cuda.is_available():
-
                 torch.cuda.empty_cache()
