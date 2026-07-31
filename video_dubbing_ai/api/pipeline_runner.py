@@ -8,9 +8,11 @@ Technology:
     Python 3.10 + PyTorch (CUDA 12.1)
 """
 
+import gc
+import json
+import shutil
 from pathlib import Path
 import torch
-import gc
 
 from utils.logger import get_logger, log_stage
 from utils.timer import Timer
@@ -74,42 +76,70 @@ class PipelineRunner:
             # -----------------------------------------------------------------
             # Stage 1: Video Processor
             # -----------------------------------------------------------------
-            # Chuẩn hóa video đầu vào (FPS, Resolution)
             p01 = VideoProcessor()
             normalized_video = p01.process(str(video_p))
+            self._persist_stage_artifacts(
+                1,
+                "Video Processor",
+                [str(video_p)],
+                [normalized_video],
+                {"source_video": str(video_p), "normalized_video": normalized_video},
+            )
 
             # -----------------------------------------------------------------
             # Stage 2: Audio Extractor
             # -----------------------------------------------------------------
-            # Trích xuất file WAV từ video đã chuẩn hóa (Khớp cấu hình 16KHz)
             p02 = AudioExtractor()
             extracted_audio_name = f"{video_p.stem}_extracted.wav"
             target_audio_path = str(self.settings.temp_dir / extracted_audio_name)
             extracted_audio = p02.process(normalized_video, target_audio_path)
+            self._persist_stage_artifacts(
+                2,
+                "Audio Extractor",
+                [normalized_video],
+                [extracted_audio],
+                {"source_video": normalized_video, "extracted_audio": extracted_audio},
+            )
 
             # -----------------------------------------------------------------
             # Stage 3: Speaker Detector (Cần ~2GB VRAM - Kéo mô hình Pyannote)
             # -----------------------------------------------------------------
             p03 = SpeakerDetector()
             speaker_segments = p03.process(extracted_audio)
-            
-            # GIẢI PHÓNG VRAM NGAY LẬP TỨC
+            self._persist_stage_artifacts(
+                3,
+                "Speaker Detector",
+                [extracted_audio],
+                [],
+                {"speaker_segments": [seg if isinstance(seg, dict) else seg.to_dict() for seg in speaker_segments]},
+            )
             SpeakerDetector.unload_model()
 
             # -----------------------------------------------------------------
             # Stage 4: Segment Creator
             # -----------------------------------------------------------------
-            # Đóng gói danh sách Segment theo chuẩn dữ liệu models_data
             p04 = SegmentCreator()
             structured_segments = p04.process(speaker_segments)
+            self._persist_stage_artifacts(
+                4,
+                "Segment Creator",
+                [],
+                [],
+                {"segments": [seg.to_dict() for seg in structured_segments]},
+            )
 
             # -----------------------------------------------------------------
             # Stage 5: ASR - SenseVoice (Cần ~1.5GB VRAM - Trích xuất tiếng Trung)
             # -----------------------------------------------------------------
             p05 = ASRProcessor()
             asr_segments = p05.process(extracted_audio, structured_segments)
-            
-            # GIẢI PHÓNG VRAM NGAY LẬP TỨC
+            self._persist_stage_artifacts(
+                5,
+                "ASR",
+                [extracted_audio],
+                [],
+                {"segments": [seg.to_dict() for seg in asr_segments]},
+            )
             ASRProcessor.unload_model()
 
             # -----------------------------------------------------------------
@@ -117,34 +147,60 @@ class PipelineRunner:
             # -----------------------------------------------------------------
             p06 = Translator()
             translated_segments = p06.process(asr_segments)
-            
-            # GIẢI PHÓNG VRAM NGAY LẬP TỨC
+            self._persist_stage_artifacts(
+                6,
+                "Translation",
+                [],
+                [],
+                {"segments": [seg.to_dict() for seg in translated_segments]},
+            )
             Translator.unload_model()
 
             # -----------------------------------------------------------------
             # Stage 7: Voice Clone - Fish Speech Local (Cần ~4GB - 6GB VRAM)
             # -----------------------------------------------------------------
-            # VRAM lúc này trống hoàn toàn (~7.5GB khả dụng), Fish Speech tự do bung lụa
             p07 = VoiceCloner()
             cloned_audio_segments = p07.process(translated_segments)
-            
-            # GIẢI PHÓNG VRAM NGAY LẬP TỨC
+            self._persist_stage_artifacts(
+                7,
+                "Voice Cloning",
+                [],
+                [seg.generated_audio for seg in cloned_audio_segments if getattr(seg, "generated_audio", "")],
+                {"segments": [seg.to_dict() for seg in cloned_audio_segments]},
+            )
             if hasattr(VoiceCloner, 'unload_model'):
                 VoiceCloner.unload_model()
 
             # -----------------------------------------------------------------
             # Stage 8: Audio Alignment
             # -----------------------------------------------------------------
-            # Khớp thời lượng và trộn audio nền, xử lý Time Stretching
             p08 = AudioAligner()
-            aligned_audio_path = p08.process(cloned_audio_segments)
+            stage8_output_dir = self.settings.output_dir / "step_8_audio_alignment"
+            stage8_merged_audio = stage8_output_dir / "merged_audio.wav"
+            p08.process(cloned_audio_segments, str(stage8_output_dir), str(stage8_merged_audio))
+            aligned_audio_path = str(stage8_merged_audio)
+            self._persist_stage_artifacts(
+                8,
+                "Audio Alignment",
+                [seg.generated_audio for seg in cloned_audio_segments if getattr(seg, "generated_audio", "")],
+                [str(stage8_merged_audio)],
+                {"segments": [seg.to_dict() for seg in cloned_audio_segments], "merged_audio": str(stage8_merged_audio)},
+            )
 
             # -----------------------------------------------------------------
             # Stage 9: Lip Sync - Wav2Lip Local (Cần ~3GB - 4GB VRAM)
             # -----------------------------------------------------------------
             p09 = LipSyncProcessor()
-            synced_video_path = p09.process(normalized_video, aligned_audio_path)
-            
+            stage9_output_path = str(self.settings.output_dir / "step_9_lipsync" / f"{video_p.stem}_lipsync.mp4")
+            synced_video_path = p09.process(normalized_video, aligned_audio_path, stage9_output_path)
+            self._persist_stage_artifacts(
+                9,
+                "Lip Sync",
+                [normalized_video, aligned_audio_path],
+                [stage9_output_path],
+                {"input_video": normalized_video, "input_audio": aligned_audio_path, "output_video": stage9_output_path},
+            )
+
             # GIẢI PHÓNG VRAM NGAY LẬP TỨC
             if hasattr(LipSyncProcessor, 'unload_model'):
                 LipSyncProcessor.unload_model()
@@ -152,11 +208,17 @@ class PipelineRunner:
             # -----------------------------------------------------------------
             # Stage 10: Renderer
             # -----------------------------------------------------------------
-            # Đóng gói luồng video, luồng audio và xuất file sản phẩm chuẩn hóa
             p10 = VideoRenderer()
             final_output_name = f"{video_p.stem}_dubbed_final.mp4"
             target_output_path = str(self.settings.output_dir / final_output_name)
             final_output_path = p10.process(synced_video_path, aligned_audio_path, target_output_path)
+            self._persist_stage_artifacts(
+                10,
+                "Video Renderer",
+                [synced_video_path, aligned_audio_path],
+                [target_output_path],
+                {"input_video": synced_video_path, "input_audio": aligned_audio_path, "output_video": target_output_path},
+            )
 
             logger.info("=======================================================")
             logger.info(f"    PIPELINE HOÀN THÀNH XUẤT SẮC: {final_output_path}   ")
@@ -169,6 +231,58 @@ class PipelineRunner:
             # Thực hiện cứu hộ dọn dẹp bộ nhớ khẩn cấp phòng trừ dính treo tài nguyên GPU
             self._emergency_clean_gpu()
             raise e
+
+    def _persist_stage_artifacts(
+        self,
+        stage_num: int,
+        stage_name: str,
+        input_paths: list | None = None,
+        output_paths: list | None = None,
+        payload: object | None = None,
+    ) -> Path:
+        """Ghi thông tin và file trung gian của từng stage vào thư mục output."""
+        stage_dir = self.settings.output_dir / f"stage_{stage_num:02d}_{stage_name.lower().replace(' ', '_')}"
+        stage_dir.mkdir(parents=True, exist_ok=True)
+
+        for item in input_paths or []:
+            if not item:
+                continue
+            source = Path(item)
+            if source.exists() and source.is_file():
+                destination = stage_dir / source.name
+                if destination.exists() and destination.resolve() != source.resolve():
+                    destination.unlink()
+                if destination.exists() and destination.resolve() == source.resolve():
+                    continue
+                shutil.copy2(source, destination)
+
+        for item in output_paths or []:
+            if not item:
+                continue
+            source = Path(item)
+            if source.exists() and source.is_file():
+                destination = stage_dir / source.name
+                if destination.exists() and destination.resolve() != source.resolve():
+                    destination.unlink()
+                if destination.exists() and destination.resolve() == source.resolve():
+                    continue
+                shutil.copy2(source, destination)
+
+        if payload is not None:
+            with (stage_dir / "data.json").open("w", encoding="utf-8") as handle:
+                json.dump(payload, handle, ensure_ascii=False, indent=2)
+
+        manifest = {
+            "stage": stage_num,
+            "name": stage_name,
+            "output_dir": str(stage_dir),
+            "input_paths": [str(item) for item in input_paths or [] if item],
+            "output_paths": [str(item) for item in output_paths or [] if item],
+        }
+        with (stage_dir / "manifest.json").open("w", encoding="utf-8") as handle:
+            json.dump(manifest, handle, ensure_ascii=False, indent=2)
+
+        return stage_dir
 
     def _emergency_clean_gpu(self):
         """

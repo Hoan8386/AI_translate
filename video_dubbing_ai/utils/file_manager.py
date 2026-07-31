@@ -45,6 +45,16 @@ class FileManager:
             "aligned",       # Audio sau khi align
             "lipsync",       # Video sau lip sync
             "merged",        # Merged audio
+            "stage_01_video_processor",
+            "stage_02_audio_extractor",
+            "stage_03_speaker_detector",
+            "stage_04_segment_creator",
+            "stage_05_asr",
+            "stage_06_translation",
+            "stage_07_voice_cloning",
+            "stage_08_audio_alignment",
+            "stage_09_lipsync",
+            "stage_10_renderer",
         ]
         
         for subdir in subdirs:
@@ -52,6 +62,18 @@ class FileManager:
         
         logger.info(f"Created job directory: {job_dir}")
         return job_dir
+
+    def get_stage_dir(self, job_id: str, stage_name: str) -> Path:
+        """
+        Lấy đường dẫn tới thư mục stage riêng cho job.
+
+        Args:
+            job_id: ID của job
+            stage_name: Tên thư mục stage, ví dụ "stage_01_video_processor"
+        """
+        stage_dir = self.temp_dir / job_id / stage_name
+        stage_dir.mkdir(parents=True, exist_ok=True)
+        return stage_dir
     
     def get_job_path(self, job_id: str, category: str, filename: str) -> Path:
         """

@@ -59,11 +59,14 @@ class LipSyncService:
             cmd,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
+            stdin=subprocess.DEVNULL,
             timeout=300,
         )
         
         if result.returncode != 0:
-            raise RuntimeError(f"ffmpeg failed: {result.stderr[:500]}")
+            raise RuntimeError(f"ffmpeg failed:\n{result.stdout}\n{result.stderr}")
         
         logger.info(f"Simple replace done: {output_path}")
         return output_path

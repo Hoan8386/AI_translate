@@ -15,3 +15,5 @@ build/
 input/
 scripts
 .agents
+video_dubbing_ai/models/
+models/wav2lip/wav2lip_gan.pth

@@ -9,22 +9,22 @@ Input:
 
 Output:
     - lipsync_video.mp4
-
-Gọi Wav2Lip inference.py qua subprocess để tránh xung đột
-với argparse globals và import paths.
 """
 
+import gc
+import json
+import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 import torch
-import gc
 
+from config.settings import get_settings
+from utils.gpu_manager import GPUManager
 from utils.logger import get_logger, log_stage
 from utils.timer import Timer
-from utils.gpu_manager import GPUManager
-from config.settings import get_settings
 
 logger = get_logger(__name__)
 
@@ -45,44 +45,25 @@ class LipSyncProcessor:
         path = Path(self.settings.lipsync.checkpoint_path)
         if path.exists():
             return path
-        # Thử tìm trong thư mục mặc định
         alt = WAV2LIP_DIR / "checkpoints" / "wav2lip_gan.pth"
         if alt.exists():
             return alt
-        return path  # Trả về path gốc (sẽ raise error nếu không tồn tại)
+        return path
 
     def process(self, video_path: str, audio_path: str, output_path: str) -> str:
-        """
-        Thực hiện lip sync bằng Wav2Lip.
-
-        Parameters
-        ----------
-        video_path : str
-            Video gốc (normalized)
-        audio_path : str
-            Audio tiếng Việt (merged)
-        output_path : str
-            Đường dẫn output video
-
-        Returns
-        -------
-        str : đường dẫn output
-        """
+        """Thực hiện lip sync bằng Wav2Lip và lưu output vào thư mục output."""
         log_stage(self.STAGE_NUM, self.STAGE_NAME, "START")
 
         with Timer(f"Stage {self.STAGE_NUM}: {self.STAGE_NAME}"):
-
             video_path = str(video_path)
             audio_path = str(audio_path)
             output_path = str(output_path)
 
-            # Kiểm tra input files
             if not Path(video_path).exists():
                 raise FileNotFoundError(f"Video không tồn tại: {video_path}")
             if not Path(audio_path).exists():
                 raise FileNotFoundError(f"Audio không tồn tại: {audio_path}")
 
-            # Kiểm tra checkpoint
             checkpoint = self._get_checkpoint_path()
             if not checkpoint.exists():
                 raise FileNotFoundError(
@@ -90,16 +71,28 @@ class LipSyncProcessor:
                     f"Tải từ: https://github.com/Rudrabha/Wav2Lip#getting-the-weights"
                 )
 
-            # Đảm bảo output dir tồn tại
-            Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+            output_dir = Path(output_path).parent
+            output_dir.mkdir(parents=True, exist_ok=True)
 
-            # Đảm bảo đủ VRAM
+            shutil.copy2(video_path, output_dir / f"{Path(video_path).stem}_input.mp4")
+            shutil.copy2(audio_path, output_dir / f"{Path(audio_path).stem}_input.wav")
+
             self.gpu.ensure_free(2000)
-
-            # Chạy Wav2Lip inference qua subprocess
-            logger.info("Khởi chạy Wav2Lip inference...")
+            logger.info("Khởi chạy Wav2Lip inference trên GPU/CPU nhẹ hơn để giảm áp lực RAM...")
 
             lipsync_settings = self.settings.lipsync
+            env = os.environ.copy()
+            env.setdefault("OMP_NUM_THREADS", "2")
+            env.setdefault("MKL_NUM_THREADS", "2")
+            env.setdefault("OPENBLAS_NUM_THREADS", "2")
+            env.setdefault("NUMEXPR_NUM_THREADS", "2")
+            if self.settings.gpu.device == "cuda":
+                env.setdefault("CUDA_VISIBLE_DEVICES", "0")
+                env.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")
+
+            face_det_batch_size = max(1, int(lipsync_settings.face_det_batch_size))
+            wav2lip_batch_size = max(1, int(lipsync_settings.wav2lip_batch_size))
+            resize_factor = max(2, int(lipsync_settings.resize_factor))
 
             cmd = [
                 sys.executable,
@@ -108,33 +101,53 @@ class LipSyncProcessor:
                 "--face", video_path,
                 "--audio", audio_path,
                 "--outfile", output_path,
-                "--face_det_batch_size", str(lipsync_settings.face_det_batch_size),
-                "--wav2lip_batch_size", str(lipsync_settings.wav2lip_batch_size),
-                "--resize_factor", str(lipsync_settings.resize_factor),
+                "--face_det_batch_size", str(face_det_batch_size),
+                "--wav2lip_batch_size", str(wav2lip_batch_size),
+                "--resize_factor", str(resize_factor),
                 "--pads", *[str(p) for p in lipsync_settings.pads],
                 "--nosmooth",
             ]
 
             logger.info(f"Wav2Lip command: {' '.join(cmd)}")
-
             result = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
+                stdin=subprocess.DEVNULL,
                 cwd=str(WAV2LIP_DIR),
-                timeout=600,  # 10 phút timeout
+                timeout=1800,
+                env=env,
             )
 
             if result.returncode != 0:
-                logger.error(f"Wav2Lip stderr: {result.stderr[:1000]}")
+                logger.error(
+                    "Wav2Lip stdout:\n%s\nWav2Lip stderr:\n%s",
+                    result.stdout[:1000],
+                    result.stderr[:1000],
+                )
                 raise RuntimeError(
                     f"Wav2Lip inference thất bại (return code {result.returncode})"
                 )
 
             if not Path(output_path).exists():
-                raise RuntimeError(
-                    "Wav2Lip không tạo được file output"
-                )
+                raise RuntimeError("Wav2Lip không tạo được file output")
+
+            manifest = {
+                "stage": self.STAGE_NAME,
+                "device": self.settings.gpu.device,
+                "gpu_available": torch.cuda.is_available(),
+                "gpu_name": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
+                "face_det_batch_size": face_det_batch_size,
+                "wav2lip_batch_size": wav2lip_batch_size,
+                "resize_factor": resize_factor,
+                "input_video": video_path,
+                "input_audio": audio_path,
+                "output_video": output_path,
+            }
+            with (output_dir / "stage9_manifest.json").open("w", encoding="utf-8") as handle:
+                json.dump(manifest, handle, ensure_ascii=False, indent=2)
 
             logger.info(f"Lip sync hoàn tất: {output_path}")
 

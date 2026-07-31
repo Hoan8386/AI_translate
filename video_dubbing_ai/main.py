@@ -16,6 +16,8 @@
 
 import sys
 import os
+import json
+import shutil
 import argparse
 from pathlib import Path
 from datetime import datetime
@@ -107,7 +109,8 @@ def process_video(input_path: str, output_name: str = None, skip_lipsync: bool =
         notify(1, "Video Processor", 5, "Chuẩn hóa H264/30FPS/AAC...")
         
         video_svc = VideoService()
-        normalized_path = str(job_dir / "normalized" / "normalized.mp4")
+        stage_01_dir = file_mgr.get_stage_dir(job_id, "stage_01_video_processor")
+        normalized_path = str(stage_01_dir / "normalized.mp4")
         video_svc.normalize(input_path, normalized_path)
         job.normalized_video = normalized_path
         
@@ -126,7 +129,8 @@ def process_video(input_path: str, output_name: str = None, skip_lipsync: bool =
         notify(2, "Audio Extractor", 15, "Trích xuất audio 16KHz Mono WAV...")
         
         audio_svc = AudioService()
-        audio_path = str(job_dir / "audio" / "audio.wav")
+        stage_02_dir = file_mgr.get_stage_dir(job_id, "stage_02_audio_extractor")
+        audio_path = str(stage_02_dir / "audio.wav")
         audio_svc.extract(normalized_path, audio_path)
         job.extracted_audio = audio_path
         
@@ -142,7 +146,11 @@ def process_video(input_path: str, output_name: str = None, skip_lipsync: bool =
                vram_used=2200, vram_model="pyannote")
         
         speaker_svc = SpeakerService()
+        stage_03_dir = file_mgr.get_stage_dir(job_id, "stage_03_speaker_detector")
         diarization = speaker_svc.detect(audio_path)
+        diarization_path = stage_03_dir / "diarization.json"
+        with diarization_path.open("w", encoding="utf-8") as handle:
+            json.dump(diarization, handle, ensure_ascii=False, indent=2)
         
         global_timer.stop("Stage 03: Speaker Detector")
         notify(3, "Speaker Detector", 30, "✅ Phát hiện speakers xong", "success",
@@ -155,7 +163,8 @@ def process_video(input_path: str, output_name: str = None, skip_lipsync: bool =
         job.update_status(JobStatus.STAGE_4_SEGMENT, 4)
         notify(4, "Segment Creator", 35, "Cắt audio theo speaker...")
         
-        segments_dir = str(job_dir / "segments")
+        stage_04_dir = file_mgr.get_stage_dir(job_id, "stage_04_segment_creator")
+        segments_dir = str(stage_04_dir / "segments")
         segments, speakers = audio_svc.create_segments(
             audio_path, diarization, segments_dir
         )
@@ -176,8 +185,16 @@ def process_video(input_path: str, output_name: str = None, skip_lipsync: bool =
                vram_used=1800, vram_model="SenseVoice")
         
         asr_svc = ASRService()
+        stage_05_dir = file_mgr.get_stage_dir(job_id, "stage_05_asr")
         segments = asr_svc.transcribe(audio_path, segments)
         job.segments = segments
+        asr_output_path = stage_05_dir / "asr_segments.json"
+        with asr_output_path.open("w", encoding="utf-8") as handle:
+            json.dump([
+                {"id": s.id, "speaker": s.speaker, "start": s.start,
+                 "end": s.end, "zh_text": s.zh_text, "vi_text": s.vi_text}
+                for s in segments
+            ], handle, ensure_ascii=False, indent=2)
         
         # Gửi kết quả ASR cho frontend
         seg_data = [{"id": s.id, "speaker": s.speaker,
@@ -197,8 +214,16 @@ def process_video(input_path: str, output_name: str = None, skip_lipsync: bool =
         notify(6, "Translation", 55, "Dịch ZH → VI...")
         
         trans_svc = TranslationService()
+        stage_06_dir = file_mgr.get_stage_dir(job_id, "stage_06_translation")
         segments = trans_svc.translate(segments)
         job.segments = segments
+        translation_output_path = stage_06_dir / "translated_segments.json"
+        with translation_output_path.open("w", encoding="utf-8") as handle:
+            json.dump([
+                {"id": s.id, "speaker": s.speaker, "start": s.start,
+                 "end": s.end, "zh_text": s.zh_text, "vi_text": s.vi_text}
+                for s in segments
+            ], handle, ensure_ascii=False, indent=2)
         
         # Gửi kết quả dịch cho frontend
         seg_data = [{"id": s.id, "speaker": s.speaker,
@@ -219,7 +244,8 @@ def process_video(input_path: str, output_name: str = None, skip_lipsync: bool =
                vram_used=0, vram_model="Fish Speech (External)")
         
         voice_svc = VoiceService()
-        generated_dir = str(job_dir / "generated")
+        stage_07_dir = file_mgr.get_stage_dir(job_id, "stage_07_voice_cloning")
+        generated_dir = str(stage_07_dir / "generated")
         segments = voice_svc.clone(segments, speakers, generated_dir)
         job.segments = segments
         
@@ -234,12 +260,13 @@ def process_video(input_path: str, output_name: str = None, skip_lipsync: bool =
         job.update_status(JobStatus.STAGE_8_ALIGN, 8)
         notify(8, "Audio Alignment", 75, "Đồng bộ thời lượng audio...")
         
-        aligned_dir = str(job_dir / "aligned")
+        stage_08_dir = file_mgr.get_stage_dir(job_id, "stage_08_audio_alignment")
+        aligned_dir = str(stage_08_dir / "aligned")
         segments = audio_svc.align(segments, aligned_dir)
         job.segments = segments
         
         # Merge tất cả segments
-        merged_audio_path = str(job_dir / "merged" / "final_audio.wav")
+        merged_audio_path = str(stage_08_dir / "merged_audio.wav")
         audio_svc.merge_segments(segments, total_duration, merged_audio_path)
         job.merged_audio = merged_audio_path
         
@@ -252,8 +279,9 @@ def process_video(input_path: str, output_name: str = None, skip_lipsync: bool =
         global_timer.start("Stage 09: Lip Sync")
         job.update_status(JobStatus.STAGE_9_LIPSYNC, 9)
         
+        stage_09_dir = file_mgr.get_stage_dir(job_id, "stage_09_lipsync")
         lipsync_svc = LipSyncService()
-        lipsync_path = str(job_dir / "lipsync" / "lipsync.mp4")
+        lipsync_path = str(stage_09_dir / "lipsync.mp4")
         
         if skip_lipsync:
             notify(9, "Lip Sync", 85, "Lip sync bị bỏ qua, thay audio trực tiếp...")
@@ -278,13 +306,21 @@ def process_video(input_path: str, output_name: str = None, skip_lipsync: bool =
         notify(10, "Video Renderer", 95, "Ghép video + audio → output.mp4...")
         
         renderer_svc = RendererService()
+        stage_10_dir = file_mgr.get_stage_dir(job_id, "stage_10_renderer")
         
         # Xác định output path
         if output_name is None:
             output_name = f"{input_file.stem}_vi.mp4"
         output_path = str(settings.output_dir / output_name)
+        stage_output_path = str(stage_10_dir / output_name)
         
-        renderer_svc.render(lipsync_path, merged_audio_path, output_path)
+        renderer_svc.render(lipsync_path, merged_audio_path, stage_output_path)
+        
+        # Copy final render sang output chính
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(stage_output_path, output_path)
+        
+        job.output_video = output_path
         job.output_video = output_path
         
         global_timer.stop("Stage 10: Renderer")
