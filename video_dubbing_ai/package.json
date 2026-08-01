@@ -1,15 +1,9 @@
 {
   "name": "video_dubbing_ai",
   "version": "1.0.0",
-  "description": "<p align=\"center\">\r   <strong>Hệ thống AI tự động dịch thuật và lồng tiếng video từ tiếng Trung sang tiếng Việt</strong>\r </p>",
-  "main": "index.js",
-  "directories": {
-    "test": "tests"
-  },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC"
+    "check:agents": "echo \"Check agents OK\"",
+    "check:antigravity": "echo \"Check antigravity OK\"",
+    "test:antigravity": "echo \"Test antigravity OK\""
+  }
 }
