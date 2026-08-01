@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Chinese Video To Vietnamese AI Dubbing System - Hệ thống AI lồng tiếng tự động">
-    <title>AI Dubbing System - Chinese → Vietnamese</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <meta name="description" content="Chinese Video To Vietnamese AI Dubbing System - Hệ thống AI lồng tiếng tự động với 10 pipeline stages">
+    <title>AI Dubbing System — Chinese → Vietnamese</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -37,10 +37,14 @@
                 <span class="logo-text">AI Dubbing</span>
                 <span class="logo-badge">V3</span>
             </div>
-            <nav class="nav">
-                <a href="#hero" class="nav-link active">Trang chủ</a>
-                <a href="#upload" class="nav-link">Upload</a>
-                <a href="#monitor" class="nav-link">Monitor</a>
+            <nav class="nav" id="mainNav">
+                <a href="#hero" class="nav-link active" id="nav-home" onclick="switchTab('home')">Trang chủ</a>
+                <a href="#upload" class="nav-link" id="nav-upload" onclick="switchTab('upload')">Upload</a>
+                <a href="#monitor" class="nav-link" id="nav-monitor" onclick="switchTab('monitor')">Monitor</a>
+                <a href="#steps" class="nav-link" id="nav-steps" onclick="switchTab('steps')">
+                    Step Viewer
+                    <span class="nav-badge" id="stepsNavBadge" style="display:none">0</span>
+                </a>
             </nav>
             <div class="header-actions">
                 <div class="connection-status" id="connectionStatus">
@@ -75,13 +79,13 @@
                     Nhận diện nhiều người nói, giữ đặc trưng giọng, đồng bộ khẩu hình.
                 </p>
                 <div class="hero-actions">
-                    <button class="btn btn-primary" onclick="scrollToSection('upload')">
+                    <button class="btn btn-primary" onclick="switchTab('upload')">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
                         </svg>
                         Upload Video
                     </button>
-                    <button class="btn btn-secondary" onclick="scrollToSection('monitor')">
+                    <button class="btn btn-secondary" onclick="switchTab('monitor')">
                         Xem Monitor
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M5 12h14M12 5l7 7-7 7"/>
@@ -348,6 +352,174 @@
                         </svg>
                         Tải Video Kết Quả
                     </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- ════════════════════════════════════════════════════ -->
+        <!--  STEP VIEWER SECTION                               -->
+        <!-- ════════════════════════════════════════════════════ -->
+        <section class="steps-section" id="steps">
+            <div class="section-header">
+                <span class="section-badge" id="stepsBadge">STANDBY</span>
+                <h2 class="section-title">Step Viewer</h2>
+                <p class="section-desc">Dữ liệu chi tiết từng bước pipeline — realtime</p>
+            </div>
+
+            <!-- No job message -->
+            <div class="steps-empty" id="stepsEmpty">
+                <div class="steps-empty-icon">
+                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+                        <polyline points="22,12 18,12 15,21 9,3 6,12 2,12"/>
+                    </svg>
+                </div>
+                <h3>Chưa có pipeline nào đang chạy</h3>
+                <p>Upload video và bắt đầu xử lý để xem dữ liệu từng step tại đây</p>
+                <button class="btn btn-primary" onclick="switchTab('upload')">
+                    Upload Video
+                </button>
+            </div>
+
+            <!-- Step Viewer Layout -->
+            <div class="steps-viewer" id="stepsViewer" style="display:none">
+                <!-- Left: Stage Sidebar -->
+                <div class="steps-sidebar">
+                    <div class="steps-sidebar-header">
+                        <span class="steps-job-id" id="stepsJobId">Job ID</span>
+                        <div class="steps-overall-timing" id="stepsOverallTiming"></div>
+                    </div>
+                    <div class="steps-list" id="stepsSidebarList">
+                        <!-- Dynamically populated -->
+                    </div>
+                </div>
+
+                <!-- Right: Stage Detail Panel -->
+                <div class="steps-detail" id="stepsDetail">
+                    <!-- Placeholder until stage is selected -->
+                    <div class="steps-detail-placeholder" id="stepsPlaceholder">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+                            <path d="M9 9l6 6M15 9l-6 6"/>
+                            <circle cx="12" cy="12" r="10"/>
+                        </svg>
+                        <p>Chọn một stage ở bên trái để xem chi tiết</p>
+                    </div>
+
+                    <!-- Stage detail content -->
+                    <div class="steps-detail-content" id="stepsDetailContent" style="display:none">
+                        <!-- Stage Header -->
+                        <div class="stage-detail-header">
+                            <div class="stage-detail-title">
+                                <div class="stage-detail-num" id="detailStageNum">01</div>
+                                <div>
+                                    <h3 id="detailStageName">Video Processor</h3>
+                                    <div class="stage-detail-meta">
+                                        <span class="stage-detail-status" id="detailStatus">completed</span>
+                                        <span class="stage-detail-timing" id="detailTiming">
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/>
+                                            </svg>
+                                            <span id="detailTimingVal">-</span>
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Accordion Panels -->
+                        <div class="detail-accordion">
+                            <!-- Data Panel -->
+                            <div class="accordion-item" id="accordionData">
+                                <div class="accordion-header" onclick="toggleAccordion('data')">
+                                    <span class="accordion-icon">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h6M9 12h6M9 15h4"/>
+                                        </svg>
+                                    </span>
+                                    <span class="accordion-title">Stage Data</span>
+                                    <span class="accordion-count" id="dataCount"></span>
+                                    <svg class="accordion-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polyline points="6,9 12,15 18,9"/>
+                                    </svg>
+                                </div>
+                                <div class="accordion-body open" id="accordionBodyData">
+                                    <div id="detailDataContent"><!-- filled dynamically --></div>
+                                </div>
+                            </div>
+
+                            <!-- Segments Panel (shown for ASR/Translation stages) -->
+                            <div class="accordion-item" id="accordionSegments" style="display:none">
+                                <div class="accordion-header" onclick="toggleAccordion('segments')">
+                                    <span class="accordion-icon">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>
+                                        </svg>
+                                    </span>
+                                    <span class="accordion-title">Segments</span>
+                                    <span class="accordion-count" id="segmentsCount"></span>
+                                    <svg class="accordion-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polyline points="6,9 12,15 18,9"/>
+                                    </svg>
+                                </div>
+                                <div class="accordion-body open" id="accordionBodySegments">
+                                    <div class="segments-mini-table" id="detailSegmentsContent"></div>
+                                </div>
+                            </div>
+
+                            <!-- Output Files Panel -->
+                            <div class="accordion-item" id="accordionFiles">
+                                <div class="accordion-header" onclick="toggleAccordion('files')">
+                                    <span class="accordion-icon">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/>
+                                        </svg>
+                                    </span>
+                                    <span class="accordion-title">Output Files</span>
+                                    <span class="accordion-count" id="filesCount"></span>
+                                    <svg class="accordion-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polyline points="6,9 12,15 18,9"/>
+                                    </svg>
+                                </div>
+                                <div class="accordion-body open" id="accordionBodyFiles">
+                                    <div class="file-list" id="detailFilesContent">
+                                        <p class="detail-empty">Chưa có files output</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Raw JSON Panel -->
+                            <div class="accordion-item">
+                                <div class="accordion-header" onclick="toggleAccordion('json')">
+                                    <span class="accordion-icon">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <polyline points="16,18 22,12 16,6"/><polyline points="8,6 2,12 8,18"/>
+                                        </svg>
+                                    </span>
+                                    <span class="accordion-title">Raw JSON</span>
+                                    <svg class="accordion-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polyline points="6,9 12,15 18,9"/>
+                                    </svg>
+                                </div>
+                                <div class="accordion-body" id="accordionBodyJson">
+                                    <div class="json-viewer" id="detailJsonContent">
+                                        <pre id="jsonPre"></pre>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Output Summary Bar -->
+            <div class="output-summary" id="outputSummary" style="display:none">
+                <div class="output-summary-inner">
+                    <div class="output-summary-title">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                        </svg>
+                        Output Files
+                    </div>
+                    <div class="output-files-list" id="outputFilesList"></div>
                 </div>
             </div>
         </section>

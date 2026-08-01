@@ -239,9 +239,19 @@ class PipelineRunner:
         input_paths: list | None = None,
         output_paths: list | None = None,
         payload: object | None = None,
+        job_id: str | None = None,
     ) -> Path:
-        """Ghi thông tin và file trung gian của từng stage vào thư mục output."""
-        stage_dir = self.settings.output_dir / f"stage_{stage_num:02d}_{stage_name.lower().replace(' ', '_')}"
+        """Ghi thông tin và file trung gian của từng stage vào thư mục output.
+        
+        Nếu job_id được cung cấp, lưu vào output/stages/<job_id>/stage_XX_name/
+        Nếu không, lưu vào output/stage_XX_name/ (fallback tương thích cũ)
+        """
+        safe_name = stage_name.lower().replace(' ', '_')
+        if job_id:
+            stage_dir = (self.settings.output_stages_dir / job_id
+                         / f"stage_{stage_num:02d}_{safe_name}")
+        else:
+            stage_dir = self.settings.output_dir / f"stage_{stage_num:02d}_{safe_name}"
         stage_dir.mkdir(parents=True, exist_ok=True)
 
         for item in input_paths or []:
@@ -360,6 +370,8 @@ def create_job(job_id: str, input_path: str, filename: str) -> dict:
         "completed_at": "",
         "segments": [],
         "logs": [],
+        "stage_data": {},   # {"1": {...}, "2": {...}} - dữ liệu từng stage
+        "stage_timings": {},  # {"1": {"start": ..., "end": ..., "duration_s": ...}}
     }
     with _jobs_lock:
         _active_jobs[job_id] = job_info
@@ -422,7 +434,8 @@ def _run_pipeline_thread(job_id: str, skip_lipsync: bool,
     def progress_callback(stage: int, stage_name: str, progress: float,
                           message: str = "", log_type: str = "info",
                           segments: list = None, vram_used: int = 0,
-                          vram_model: str = ""):
+                          vram_model: str = "", stage_data: dict = None,
+                          timing: dict = None):
         """Callback được gọi từ pipeline để báo tiến trình"""
         with _jobs_lock:
             if job_id in _active_jobs:
@@ -431,6 +444,10 @@ def _run_pipeline_thread(job_id: str, skip_lipsync: bool,
                 _active_jobs[job_id]["progress"] = progress
                 if segments:
                     _active_jobs[job_id]["segments"] = segments
+                if stage_data:
+                    _active_jobs[job_id]["stage_data"][str(stage)] = stage_data
+                if timing:
+                    _active_jobs[job_id]["stage_timings"][str(stage)] = timing
                 if message:
                     _active_jobs[job_id]["logs"].append({
                         "type": log_type,
@@ -451,6 +468,10 @@ def _run_pipeline_thread(job_id: str, skip_lipsync: bool,
             update["segments"] = segments
         if vram_used > 0:
             update["vram"] = {"used": vram_used, "model": vram_model}
+        if stage_data:
+            update["stage_data"] = {"stage": stage, "name": stage_name, "data": stage_data}
+        if timing:
+            update["timing"] = timing
 
         send_update(update)
 

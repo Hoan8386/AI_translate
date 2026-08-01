@@ -201,7 +201,156 @@ async def delete_job(job_id: str):
     if temp_job_dir.exists():
         shutil.rmtree(temp_job_dir, ignore_errors=True)
     
+    # Xóa stages directory của job
+    from config.settings import get_settings
+    stages_job_dir = get_settings().output_stages_dir / job_id
+    if stages_job_dir.exists():
+        shutil.rmtree(stages_job_dir, ignore_errors=True)
+    
     # Xóa khỏi memory
     pipeline_runner.delete_job(job_id)
     
     return {"message": f"Job {job_id} đã được xóa"}
+
+
+@router.get("/jobs/{job_id}/stages")
+async def get_job_stages(job_id: str):
+    """
+    Lấy danh sách tất cả stages đã hoàn thành của job.
+    
+    Returns:
+        List of stage summaries với status, timing, file counts
+    """
+    job_info = pipeline_runner.get_job_info(job_id)
+    if job_info is None:
+        raise HTTPException(status_code=404, detail=f"Job không tồn tại: {job_id}")
+    
+    from config.settings import get_settings
+    settings = get_settings()
+    stages_dir = settings.output_stages_dir / job_id
+    
+    stages = []
+    if stages_dir.exists():
+        for stage_dir in sorted(stages_dir.iterdir()):
+            if not stage_dir.is_dir():
+                continue
+            
+            stage_info = {"dir": stage_dir.name, "files": [], "has_data": False}
+            
+            # Đọc manifest.json
+            manifest_path = stage_dir / "manifest.json"
+            if manifest_path.exists():
+                import json as _json
+                with manifest_path.open("r", encoding="utf-8") as f:
+                    stage_info.update(_json.load(f))
+            
+            # Liệt kê files (bỏ qua json)
+            for f in stage_dir.iterdir():
+                if f.is_file():
+                    stage_info["files"].append({
+                        "name": f.name,
+                        "size_bytes": f.stat().st_size,
+                        "is_data": f.suffix == ".json",
+                    })
+            
+            # Kiểm tra có data.json không
+            stage_info["has_data"] = (stage_dir / "data.json").exists()
+            stages.append(stage_info)
+    
+    return {
+        "job_id": job_id,
+        "stages": stages,
+        "current_stage": job_info.get("current_stage", 0),
+        "stage_data": job_info.get("stage_data", {}),
+    }
+
+
+@router.get("/jobs/{job_id}/stages/{stage_num}")
+async def get_stage_detail(job_id: str, stage_num: int):
+    """
+    Lấy dữ liệu chi tiết của một stage cụ thể.
+    
+    Returns:
+        manifest, data (segments/metrics), danh sách files
+    """
+    job_info = pipeline_runner.get_job_info(job_id)
+    if job_info is None:
+        raise HTTPException(status_code=404, detail=f"Job không tồn tại: {job_id}")
+    
+    from config.settings import get_settings
+    import json as _json
+    settings = get_settings()
+    stages_dir = settings.output_stages_dir / job_id
+    
+    # Tìm stage directory theo số
+    stage_dir = None
+    if stages_dir.exists():
+        for d in stages_dir.iterdir():
+            if d.is_dir() and d.name.startswith(f"stage_{stage_num:02d}_"):
+                stage_dir = d
+                break
+    
+    if stage_dir is None:
+        # Thử lấy từ job_info stage_data nếu đang chạy
+        stage_data = job_info.get("stage_data", {}).get(str(stage_num))
+        if stage_data:
+            return {"stage": stage_num, "status": "in_progress", "data": stage_data}
+        raise HTTPException(status_code=404, detail=f"Stage {stage_num} chưa có dữ liệu")
+    
+    result = {"stage": stage_num, "dir": stage_dir.name, "status": "completed"}
+    
+    # Đọc manifest
+    manifest_path = stage_dir / "manifest.json"
+    if manifest_path.exists():
+        with manifest_path.open("r", encoding="utf-8") as f:
+            result["manifest"] = _json.load(f)
+    
+    # Đọc data.json
+    data_path = stage_dir / "data.json"
+    if data_path.exists():
+        with data_path.open("r", encoding="utf-8") as f:
+            result["data"] = _json.load(f)
+    
+    # Liệt kê files
+    files = []
+    for fp in sorted(stage_dir.iterdir()):
+        if fp.is_file():
+            files.append({
+                "name": fp.name,
+                "size_bytes": fp.stat().st_size,
+                "size_mb": round(fp.stat().st_size / (1024 * 1024), 2),
+                "type": fp.suffix.lstrip("."),
+            })
+    result["files"] = files
+    
+    return result
+
+
+@router.get("/jobs/{job_id}/output-files")
+async def list_output_files(job_id: str):
+    """Liệt kê tất cả files output của job (video, audio, json)"""
+    job_info = pipeline_runner.get_job_info(job_id)
+    if job_info is None:
+        raise HTTPException(status_code=404, detail=f"Job không tồn tại: {job_id}")
+    
+    from config.settings import get_settings
+    settings = get_settings()
+    stages_dir = settings.output_stages_dir / job_id
+    
+    all_files = []
+    if stages_dir.exists():
+        for stage_dir in sorted(stages_dir.iterdir()):
+            if not stage_dir.is_dir():
+                continue
+            for fp in sorted(stage_dir.iterdir()):
+                if fp.is_file() and fp.suffix != ".json":
+                    all_files.append({
+                        "stage": stage_dir.name,
+                        "name": fp.name,
+                        "path": str(fp),
+                        "size_mb": round(fp.stat().st_size / (1024 * 1024), 2),
+                        "type": fp.suffix.lstrip("."),
+                    })
+    
+    return {"job_id": job_id, "files": all_files}
+

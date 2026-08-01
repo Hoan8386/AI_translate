@@ -62,12 +62,14 @@ def process_video(input_path: str, output_name: str = None, skip_lipsync: bool =
     """
     # Helper để gọi callback (nếu có)
     def notify(stage, stage_name, progress, message="", log_type="info",
-               segments=None, vram_used=0, vram_model=""):
+               segments=None, vram_used=0, vram_model="",
+               stage_data=None, timing=None):
         if progress_callback:
             progress_callback(
                 stage=stage, stage_name=stage_name, progress=progress,
                 message=message, log_type=log_type, segments=segments,
                 vram_used=vram_used, vram_model=vram_model,
+                stage_data=stage_data, timing=timing,
             )
     # === SETUP ===
     settings = get_settings()
@@ -119,7 +121,14 @@ def process_video(input_path: str, output_name: str = None, skip_lipsync: bool =
         total_duration = video_info["duration"]
         
         global_timer.stop("Stage 01: Video Processor")
-        notify(1, "Video Processor", 10, "✅ Video chuẩn hóa xong", "success")
+        elapsed_01 = global_timer.get_elapsed("Stage 01: Video Processor")
+        notify(1, "Video Processor", 10, "✅ Video chuẩn hóa xong", "success",
+               stage_data={
+                   "video_info": video_info,
+                   "normalized_path": normalized_path,
+                   "output_dir": str(stage_01_dir),
+               },
+               timing={"duration_s": round(elapsed_01, 2)})
         
         # ─────────────────────────────────────────
         # STAGE 2: Audio Extractor
@@ -135,7 +144,15 @@ def process_video(input_path: str, output_name: str = None, skip_lipsync: bool =
         job.extracted_audio = audio_path
         
         global_timer.stop("Stage 02: Audio Extractor")
-        notify(2, "Audio Extractor", 20, "✅ Trích xuất audio xong", "success")
+        elapsed_02 = global_timer.get_elapsed("Stage 02: Audio Extractor")
+        notify(2, "Audio Extractor", 20, "✅ Trích xuất audio xong", "success",
+               stage_data={
+                   "audio_path": audio_path,
+                   "sample_rate": 16000,
+                   "channels": "mono",
+                   "output_dir": str(stage_02_dir),
+               },
+               timing={"duration_s": round(elapsed_02, 2)})
         
         # ─────────────────────────────────────────
         # STAGE 3: Speaker Detector
@@ -153,8 +170,15 @@ def process_video(input_path: str, output_name: str = None, skip_lipsync: bool =
             json.dump(diarization, handle, ensure_ascii=False, indent=2)
         
         global_timer.stop("Stage 03: Speaker Detector")
+        elapsed_03 = global_timer.get_elapsed("Stage 03: Speaker Detector")
         notify(3, "Speaker Detector", 30, "✅ Phát hiện speakers xong", "success",
-               vram_used=0, vram_model="")
+               vram_used=0, vram_model="",
+               stage_data={
+                   "diarization": diarization,
+                   "num_speakers": len(set(s.get("speaker", "") for s in diarization)) if isinstance(diarization, list) else 0,
+                   "output_dir": str(stage_03_dir),
+               },
+               timing={"duration_s": round(elapsed_03, 2)})
         
         # ─────────────────────────────────────────
         # STAGE 4: Segment Creator
@@ -173,8 +197,19 @@ def process_video(input_path: str, output_name: str = None, skip_lipsync: bool =
             job.add_speaker(spk)
         
         global_timer.stop("Stage 04: Segment Creator")
+        elapsed_04 = global_timer.get_elapsed("Stage 04: Segment Creator")
+        seg_preview = [{"id": s.id, "speaker": s.speaker, "start": s.start, "end": s.end}
+                       for s in segments[:20]]
         notify(4, "Segment Creator", 40,
-               f"✅ Tạo {len(segments)} segments, {len(speakers)} speakers", "success")
+               f"✅ Tạo {len(segments)} segments, {len(speakers)} speakers", "success",
+               stage_data={
+                   "num_segments": len(segments),
+                   "num_speakers": len(speakers),
+                   "speakers": list(speakers.keys()),
+                   "segments_preview": seg_preview,
+                   "output_dir": str(stage_04_dir),
+               },
+               timing={"duration_s": round(elapsed_04, 2)})
         
         # ─────────────────────────────────────────
         # STAGE 5: ASR (Chinese Speech-to-Text)
@@ -203,8 +238,16 @@ def process_video(input_path: str, output_name: str = None, skip_lipsync: bool =
                     for s in segments if s.zh_text]
         
         global_timer.stop("Stage 05: Chinese ASR")
+        elapsed_05 = global_timer.get_elapsed("Stage 05: Chinese ASR")
         notify(5, "Chinese ASR", 50, "✅ Nhận dạng tiếng Trung xong", "success",
-               segments=seg_data, vram_used=0, vram_model="")
+               segments=seg_data, vram_used=0, vram_model="",
+               stage_data={
+                   "num_segments": len(seg_data),
+                   "segments": seg_data,
+                   "asr_json": str(asr_output_path),
+                   "output_dir": str(stage_05_dir),
+               },
+               timing={"duration_s": round(elapsed_05, 2)})
         
         # ─────────────────────────────────────────
         # STAGE 6: Translation (ZH → VI)
@@ -232,8 +275,16 @@ def process_video(input_path: str, output_name: str = None, skip_lipsync: bool =
                     for s in segments if s.vi_text]
         
         global_timer.stop("Stage 06: Translation")
+        elapsed_06 = global_timer.get_elapsed("Stage 06: Translation")
         notify(6, "Translation", 60, "✅ Dịch thuật xong", "success",
-               segments=seg_data)
+               segments=seg_data,
+               stage_data={
+                   "num_segments": len(seg_data),
+                   "segments": seg_data,
+                   "translation_json": str(translation_output_path),
+                   "output_dir": str(stage_06_dir),
+               },
+               timing={"duration_s": round(elapsed_06, 2)})
         
         # ─────────────────────────────────────────
         # STAGE 7: Voice Cloning
@@ -250,8 +301,16 @@ def process_video(input_path: str, output_name: str = None, skip_lipsync: bool =
         job.segments = segments
         
         global_timer.stop("Stage 07: Voice Cloning")
+        elapsed_07 = global_timer.get_elapsed("Stage 07: Voice Cloning")
+        cloned_files = [s.generated_audio for s in segments if getattr(s, "generated_audio", "")]
         notify(7, "Voice Cloning", 70, "✅ Clone giọng nói xong", "success",
-               vram_used=0, vram_model="")
+               vram_used=0, vram_model="",
+               stage_data={
+                   "num_cloned": len(cloned_files),
+                   "generated_dir": generated_dir,
+                   "output_dir": str(stage_07_dir),
+               },
+               timing={"duration_s": round(elapsed_07, 2)})
         
         # ─────────────────────────────────────────
         # STAGE 8: Audio Alignment
@@ -271,7 +330,15 @@ def process_video(input_path: str, output_name: str = None, skip_lipsync: bool =
         job.merged_audio = merged_audio_path
         
         global_timer.stop("Stage 08: Audio Alignment")
-        notify(8, "Audio Alignment", 80, "✅ Đồng bộ audio xong", "success")
+        elapsed_08 = global_timer.get_elapsed("Stage 08: Audio Alignment")
+        notify(8, "Audio Alignment", 80, "✅ Đồng bộ audio xong", "success",
+               stage_data={
+                   "merged_audio": merged_audio_path,
+                   "aligned_dir": aligned_dir,
+                   "num_segments": len(segments),
+                   "output_dir": str(stage_08_dir),
+               },
+               timing={"duration_s": round(elapsed_08, 2)})
         
         # ─────────────────────────────────────────
         # STAGE 9: Lip Sync
@@ -295,8 +362,15 @@ def process_video(input_path: str, output_name: str = None, skip_lipsync: bool =
         job.lipsync_video = lipsync_path
         
         global_timer.stop("Stage 09: Lip Sync")
+        elapsed_09 = global_timer.get_elapsed("Stage 09: Lip Sync")
         notify(9, "Lip Sync", 90, "✅ Lip sync xong", "success",
-               vram_used=0, vram_model="")
+               vram_used=0, vram_model="",
+               stage_data={
+                   "lipsync_path": lipsync_path,
+                   "skip_lipsync": skip_lipsync,
+                   "output_dir": str(stage_09_dir),
+               },
+               timing={"duration_s": round(elapsed_09, 2)})
         
         # ─────────────────────────────────────────
         # STAGE 10: Final Render
@@ -324,7 +398,14 @@ def process_video(input_path: str, output_name: str = None, skip_lipsync: bool =
         job.output_video = output_path
         
         global_timer.stop("Stage 10: Renderer")
-        notify(10, "Video Renderer", 100, "✅ Render video xong", "success")
+        elapsed_10 = global_timer.get_elapsed("Stage 10: Renderer")
+        notify(10, "Video Renderer", 100, "✅ Render video xong", "success",
+               stage_data={
+                   "output_path": output_path,
+                   "output_name": output_name,
+                   "output_dir": str(stage_10_dir),
+               },
+               timing={"duration_s": round(elapsed_10, 2)})
         
         # ═════════════════════════════════════════
         # HOÀN THÀNH

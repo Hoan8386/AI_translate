@@ -140,6 +140,11 @@ class Settings:
         return self.project_root / "output"
 
     @property
+    def output_stages_dir(self) -> Path:
+        """Thư mục lưu kết quả từng stage theo job: output/stages/<job_id>/"""
+        return self.project_root / "output" / "stages"
+
+    @property
     def temp_dir(self) -> Path:
         return self.project_root / "temp"
 
@@ -149,7 +154,11 @@ class Settings:
 
     @property
     def models_dir(self) -> Path:
-        return self.project_root / "models"
+        """Thư mục chứa AI models - ưu tiên env var MODELS_DIR, fallback C:\\models"""
+        custom = os.getenv("MODELS_DIR", "")
+        if custom:
+            return Path(custom)
+        return Path("C:/models")
 
     @property
     def third_party_dir(self) -> Path:
@@ -171,8 +180,8 @@ class Settings:
 
     def __post_init__(self):
         """Tạo các thư mục cần thiết"""
-        for dir_path in [self.input_dir, self.output_dir, self.temp_dir,
-                         self.cache_dir, self.models_dir]:
+        for dir_path in [self.input_dir, self.output_dir,
+                         self.output_stages_dir, self.temp_dir, self.cache_dir]:
             dir_path.mkdir(parents=True, exist_ok=True)
 
         # Set Wav2Lip checkpoint path

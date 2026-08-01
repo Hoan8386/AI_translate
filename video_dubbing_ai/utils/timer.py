@@ -68,6 +68,11 @@ class Timer:
         logger.info(f"⏱ [{label}] {self._format_time(elapsed)}")
         return elapsed
     
+    def get_elapsed(self, label: str) -> float:
+        """Lấy thời gian elapsed của label đã stop (giây)"""
+        record = self._records.get(label, {})
+        return record.get("elapsed", 0.0)
+    
     def report(self) -> str:
         """In báo cáo thời gian tất cả stages"""
         if not self._records:
