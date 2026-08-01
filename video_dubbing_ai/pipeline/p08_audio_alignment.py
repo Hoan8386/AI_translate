@@ -58,7 +58,6 @@ class AudioAligner:
             logger.info(f"Aligning {len(segments)} audio segments...")
 
             aligned_count = 0
-            aligned_paths = []
 
             for seg in segments:
                 input_audio = None
@@ -83,23 +82,35 @@ class AudioAligner:
                 shutil.copy2(input_audio, output_audio)
 
                 seg.aligned_audio = str(output_audio)
-                aligned_paths.append(output_audio)
                 aligned_count += 1
 
                 logger.debug(f"Segment {seg.id} aligned -> {output_audio.name}")
 
-            self._write_merged_audio(aligned_paths, merged_audio_path)
+            self._write_merged_audio(segments, merged_audio_path)
             logger.info(f"Aligned {aligned_count}/{len(segments)} segments.")
             logger.info(f"Stage 8 outputs saved at: {output_dir}")
 
         log_stage(self.STAGE_NUM, self.STAGE_NAME, "DONE")
         return segments
 
-    def _write_merged_audio(self, aligned_paths: List[Path], output_path: Path) -> Path:
+    def _write_merged_audio(
+        self, segments: List[Segment], output_path: Path
+    ) -> Path:
+        """
+        Merge các aligned segments vào 1 file audio (concatenate tuần tự).
+
+        Chú ý: phương thức này chỉ concatenate theo thứ tự id.
+        Với time-position merge chính xác, dùng merge_by_time_position()
+        hoặc AudioService.merge_segments() từ main.py.
+        """
         sample_rate = self.settings.audio.sample_rate
         chunks = []
 
-        for audio_path in aligned_paths:
+        for seg in segments:
+            audio_path_str = getattr(seg, "aligned_audio", None)
+            if not audio_path_str:
+                continue
+            audio_path = Path(audio_path_str)
             if not audio_path.exists():
                 continue
             try:
@@ -124,6 +135,68 @@ class AudioAligner:
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
         sf.write(output_path, merged, sample_rate)
+        logger.info(f"Merged audio (concatenated): {output_path} ({len(merged)/sample_rate:.1f}s)")
+        return output_path
+
+    def merge_by_time_position(
+        self,
+        segments: List[Segment],
+        total_duration: float,
+        output_path: Path,
+    ) -> Path:
+        """
+        Time-position aware merge: đặt từng segment audio vào đúng vị trí
+        timestamp gốc của video. Cách này đảm bảo audio không bị lệch so với video.
+
+        Nên dùng cách này thay vì concatenate khi có thông tin timing.
+        """
+        sample_rate = self.settings.audio.sample_rate
+        total_samples = int(total_duration * sample_rate)
+        merged = np.zeros(total_samples, dtype=np.float32)
+
+        for seg in segments:
+            audio_path_str = seg.aligned_audio or getattr(seg, "generated_audio", None)
+            if not audio_path_str:
+                continue
+
+            audio_path = Path(audio_path_str)
+            if not audio_path.exists():
+                logger.debug(f"Segment {seg.id}: audio không tồn tại, bỏ qua.")
+                continue
+
+            try:
+                seg_audio, seg_sr = sf.read(audio_path)
+            except Exception as e:
+                logger.warning(f"Segment {seg.id}: không đọc được audio ({e}).")
+                continue
+
+            if seg_audio.ndim > 1:
+                seg_audio = np.mean(seg_audio, axis=1)
+            seg_audio = seg_audio.astype(np.float32)
+
+            if seg_sr != sample_rate:
+                seg_audio = self._resample_audio(seg_audio, seg_sr, sample_rate)
+
+            start_sample = int(seg.start * sample_rate)
+            end_sample = start_sample + len(seg_audio)
+
+            # Clamp để tránh vượt quá buffer
+            if end_sample > total_samples:
+                seg_audio = seg_audio[:total_samples - start_sample]
+                end_sample = total_samples
+
+            if start_sample < total_samples:
+                merged[start_sample:start_sample + len(seg_audio)] = seg_audio
+
+        # Normalize
+        max_val = np.max(np.abs(merged))
+        if max_val > 0:
+            merged = merged / max_val * 0.95
+
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        sf.write(output_path, merged, sample_rate)
+        logger.info(f"Merged audio (time-position): {output_path} ({len(merged)/sample_rate:.1f}s)")
         return output_path
 
     def _resample_audio(self, data: np.ndarray, src_sr: int, target_sr: int) -> np.ndarray:

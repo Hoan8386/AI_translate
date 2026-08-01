@@ -395,7 +395,6 @@ def process_video(input_path: str, output_name: str = None, skip_lipsync: bool =
         shutil.copy2(stage_output_path, output_path)
         
         job.output_video = output_path
-        job.output_video = output_path
         
         global_timer.stop("Stage 10: Renderer")
         elapsed_10 = global_timer.get_elapsed("Stage 10: Renderer")

@@ -166,6 +166,17 @@ class VoiceCloner:
     def __init__(self):
         self.manager = FishSpeechManager()
 
+    @classmethod
+    def unload_model(cls):
+        """
+        Class-level unload method dùng cho emergency_clean_gpu().
+        Giải phóng VRAM của FishSpeechManager singleton.
+        """
+        try:
+            FishSpeechManager().unload()
+        except Exception:
+            pass
+
     def _read_audio_bytes(self, audio_path: str) -> bytes:
         """Đọc file audio thành bytes để dùng làm reference."""
         with open(audio_path, "rb") as f:
@@ -321,11 +332,14 @@ class VoiceCloner:
                 )
 
                 # Thử Fish Speech
+                # Ưu tiên reference_audio (3-15s đã ghép từ Stage 4),
+                # fallback về source_audio (segment ngắn) nếu không có.
+                ref_audio_path = getattr(seg, "reference_audio", "") or source_audio
                 generated = False
                 if fish_speech_available:
                     generated = self._generate_with_fish_speech(
                         text=text,
-                        reference_audio_path=source_audio,
+                        reference_audio_path=ref_audio_path,
                         reference_text=zh_text,
                         output_path=output_path,
                     )
